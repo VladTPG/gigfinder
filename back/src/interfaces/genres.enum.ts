@@ -1,0 +1,17 @@
+export enum Genres {
+  ROCK = "rock",
+  POP = "pop",
+  HIP_HOP = "hip-hop",
+  RAP = "rap",
+  CLASSICAL = "classical",
+  JAZZ = "jazz",
+  COUNTRY = "country",
+  REGGAE = "reggae",
+  DISCO = "disco",
+  BLUES = "blues",
+  SOUL = "soul",
+  FOLK = "folk",
+  METAL = "metal",
+  PUNK = "punk",
+  EDM = "edm",
+}

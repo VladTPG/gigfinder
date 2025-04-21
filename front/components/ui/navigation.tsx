@@ -44,7 +44,7 @@ export function Navigation() {
                 )}
               >
                 <Icon size={20} />
-                <span className="text-xs mt-1">{label}</span>
+                <span className="text-xs mt-1 tracking-widest">{label}</span>
               </Link>
             );
           })}
@@ -54,7 +54,7 @@ export function Navigation() {
   }
 
   return (
-    <Sidebar className="p-6 flex flex-col gap-6">
+    <Sidebar className="p-4 flex flex-col gap-6">
       <img src="/logo.png" className="mb-14 mt-5 w-fit" alt="logo" />
 
       <SidebarMenu className="space-y-2">
@@ -89,7 +89,7 @@ export function Navigation() {
                   </div>
                   <span
                     className={cn(
-                      "text-lg transition-all duration-300",
+                      "text-lg transition-all duration-300 tracking-widest",
                       isActive ? "font-medium" : "font-normal"
                     )}
                   >
