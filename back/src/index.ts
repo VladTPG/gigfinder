@@ -5,7 +5,7 @@ const router = new Router();
 
 // Basic health check endpoint
 router.get("/", (ctx) => {
-  ctx.response.body = "Server is running!";
+  ctx.response.body = "Server is running! wow";
 });
 
 // Add your routes here
