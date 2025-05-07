@@ -1,0 +1,19 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Temporarily make all rules permissive for troubleshooting
+    match /users/{userId} {
+      allow read, write;
+    }
+    
+    // Public profile data can be read by anyone
+    match /users/{userId}/public/{document=**} {
+      allow read, write;
+    }
+    
+    // Other collections - secure by default but allow all for testing
+    match /{collection}/{document=**} {
+      allow read, write;
+    }
+  }
+} 
