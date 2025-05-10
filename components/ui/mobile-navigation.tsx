@@ -6,6 +6,7 @@ import {
   CalendarIcon,
   UserIcon,
   LogOutIcon,
+  SearchIcon,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
@@ -17,6 +18,7 @@ const navItems = [
   { href: "/feed", label: "FEED", icon: HomeIcon },
   { href: "/bands", label: "BANDS", icon: UsersIcon },
   { href: "/gigs", label: "GIGS", icon: CalendarIcon },
+  { href: "/search", label: "SEARCH", icon: SearchIcon },
   { href: "/profile", label: "PROFILE", icon: UserIcon },
 ];
 
@@ -27,7 +29,7 @@ export function MobileNavigation() {
   return (
     <div className="fixed bottom-0 left-0 right-0 w-full bg-sidebar rounded-t-xl shadow-lg border-t border-border/30">
       <nav className="flex h-16">
-        {navItems.map(({ href, label, icon: Icon }, index) => {
+        {navItems.map(({ href, label, icon: Icon }) => {
           const isActive = pathname === href;
           return (
             <Link

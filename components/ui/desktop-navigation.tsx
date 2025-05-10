@@ -6,6 +6,7 @@ import {
   CalendarIcon,
   UserIcon,
   LogOutIcon,
+  SearchIcon,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/feed", label: "FEED", icon: HomeIcon },
   { href: "/bands", label: "BANDS", icon: UsersIcon },
   { href: "/gigs", label: "GIGS", icon: CalendarIcon },
+  { href: "/search", label: "SEARCH", icon: SearchIcon },
   { href: "/profile", label: "PROFILE", icon: UserIcon },
 ];
 

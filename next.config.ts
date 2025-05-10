@@ -19,6 +19,13 @@ const nextConfig: NextConfig = {
         hostname: "firebasestorage.googleapis.com",
         pathname: "/**",
       },
+      {
+        protocol:
+          process.env.NEXT_PUBLIC_MINIO_USE_SSL === "true" ? "https" : "http",
+        hostname: process.env.NEXT_PUBLIC_MINIO_ENDPOINT || "",
+        port: process.env.NEXT_PUBLIC_MINIO_PORT,
+        pathname: "/**",
+      },
     ],
   },
 };

@@ -134,9 +134,12 @@ export default function ProfilePage() {
 
           <h1 className=" text-xl font-bold mb-1">{displayName}</h1>
 
-          <button className="bg-gray-600  text-sm rounded-full px-4 py-1 my-3 hover:bg-gray-700 hover:shadow-center-glow transition-all duration-300">
+          <Link
+            href="/profile/edit"
+            className="bg-gray-600 text-sm rounded-full px-4 py-1 my-3 hover:bg-gray-700 hover:shadow-center-glow transition-all duration-300"
+          >
             Edit profile
-          </button>
+          </Link>
 
           <p className="text-sm text-center text-gray-400 mb-3">
             {userProfile.profile.bio || "No bio added yet."}
