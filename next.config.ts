@@ -1,7 +1,6 @@
-import type { NextConfig } from "next";
+import { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  /* config options here */
   images: {
     remotePatterns: [
       {
@@ -21,12 +20,18 @@ const nextConfig: NextConfig = {
       },
       {
         protocol:
-          process.env.NEXT_PUBLIC_MINIO_USE_SSL === "true" ? "https" : "http",
-        hostname: process.env.NEXT_PUBLIC_MINIO_ENDPOINT || "",
-        port: process.env.NEXT_PUBLIC_MINIO_PORT,
+          process.env.MINIO_USE_SSL === "true" ? "https" : "http",
+        hostname: process.env.MINIO_ENDPOINT || "",
+        port: process.env.MINIO_PORT,
         pathname: "/**",
       },
+      {
+        protocol: "https",
+        hostname: "vlad.mvp.tfm.ro",
+        pathname: "/gigfinder/**",
+      },
     ],
+    unoptimized: true,
   },
 };
 
