@@ -9,20 +9,25 @@ import Link from "next/link";
 import { use } from "react";
 
 // Instruments with their SVG paths
-const instruments = [
-  { id: "guitar", label: "Guitar", icon: "/guitar.svg" },
-  { id: "piano", label: "Piano", icon: "/piano.svg" },
-  { id: "voice", label: "Voice", icon: "/mic.svg" },
-  { id: "bass", label: "Bass", icon: "/bass.svg" },
-  { id: "drums", label: "Drums", icon: "/drums.svg" },
+const allInstruments = [
+  { id: "guitar", label: "Guitar", svg: "/guitar.svg" },
+  { id: "piano", label: "Piano", svg: "/piano.svg" },
+  { id: "voice", label: "Voice", svg: "/mic.svg" },
+  { id: "bass", label: "Bass", svg: "/bass.svg" },
+  { id: "drums", label: "Drums", svg: "/drums.svg" },
 ];
 
-// Add a Band interface
+// Band interface
 interface Band {
   id: string;
   name: string;
   imageUrl?: string;
   role?: string;
+}
+
+// Extended user interface with bands
+interface MusicianWithBands extends IUser {
+  bands?: Band[];
 }
 
 export default function MusicianProfilePage({
@@ -34,8 +39,9 @@ export default function MusicianProfilePage({
   const unwrappedParams = use(params);
   const uid = unwrappedParams.uid;
 
-  const [musician, setMusician] = useState<IUser | null>(null);
+  const [musician, setMusician] = useState<MusicianWithBands | null>(null);
   const [videos, setVideos] = useState<IVideo[]>([]);
+  const [following, setFollowing] = useState<IUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -44,7 +50,7 @@ export default function MusicianProfilePage({
     const fetchMusician = async () => {
       try {
         // Fetch the musician profile from the users collection
-        const userData = await getDocumentById<IUser>("users", uid);
+        const userData = await getDocumentById<MusicianWithBands>("users", uid);
 
         if (userData && userData.role === "musician") {
           setMusician(userData);
@@ -57,6 +63,15 @@ export default function MusicianProfilePage({
 
             const videoResults = await Promise.all(videoPromises);
             setVideos(videoResults.filter(Boolean) as IVideo[]);
+          }
+
+          // Fetch following if available
+          if (userData.following && userData.following.length > 0) {
+            const followingPromises = userData.following
+              .slice(0, 4)
+              .map((userId) => getDocumentById("users", userId));
+            const followingResults = await Promise.all(followingPromises);
+            setFollowing(followingResults.filter(Boolean) as IUser[]);
           }
         } else {
           setError("Musician not found");
@@ -74,36 +89,28 @@ export default function MusicianProfilePage({
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      <div className="min-h-screen text-white flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
       </div>
     );
   }
 
   if (error || !musician) {
     return (
-      <div className="container mx-auto px-4 py-8 text-center">
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
-          <p>{error || "Musician not found"}</p>
-        </div>
-        <button
-          onClick={() => router.back()}
-          className="text-blue-500 hover:text-blue-700 font-medium flex items-center justify-center mx-auto"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-5 w-5 mr-1"
-            viewBox="0 0 20 20"
-            fill="currentColor"
+      <div className="min-h-screen text-white flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-xl font-semibold mb-4">Profile not found</h1>
+          <p className="mb-6 text-gray-400">
+            {error ||
+              "There was a problem loading the profile. Please try again."}
+          </p>
+          <button
+            onClick={() => router.back()}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg"
           >
-            <path
-              fillRule="evenodd"
-              d="M9.707 14.707a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 1.414L7.414 9H15a1 1 0 110 2H7.414l2.293 2.293a1 1 0 010 1.414z"
-              clipRule="evenodd"
-            />
-          </svg>
-          Go Back
-        </button>
+            Go Back
+          </button>
+        </div>
       </div>
     );
   }
@@ -114,21 +121,15 @@ export default function MusicianProfilePage({
       ? `${musician.profile.firstName} ${musician.profile.lastName}`
       : musician.profile.username;
 
-  // Generate avatar URL if no profile picture
-  const avatarUrl =
-    musician.profile.profilePicture ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(
-      musician.profile.username
-    )}&background=6D28D9&color=fff&size=256`;
-
   // Check if musician plays a specific instrument
   const hasInstrument = (instrumentId: string) => {
     return musician.profile.instruments?.includes(instrumentId) || false;
   };
 
   return (
-    <div className="container mx-auto p-4 max-w-4xl">
-      <div className="mb-8">
+    <div className="min-h-screen text-white pb-2 md:pb-0 md:min-w-lg">
+      {/* Back button */}
+      <div className="p-4 max-w-3xl mx-auto">
         <button
           onClick={() => router.back()}
           className="text-gray-400 hover:text-white mb-4 inline-flex items-center"
@@ -150,15 +151,18 @@ export default function MusicianProfilePage({
       </div>
 
       {/* Profile header */}
-      <div className="bg-gray-800/30 rounded-2xl overflow-hidden mb-8">
-        {/* Banner image - placeholder gradient */}
-        <div className="h-40 bg-gradient-to-r from-purple-600 via-violet-600 to-indigo-600 relative">
-          {/* Profile image - positioned to overlap the banner */}
-          <div className="absolute -bottom-16 left-8">
-            <div className="w-32 h-32 rounded-full border-4 border-gray-900 overflow-hidden">
-              <img
-                src={avatarUrl}
-                alt={displayName}
+      <div className="flex flex-col items-center my-4 bg-gray-800/30 px-5 py-2 rounded-2xl max-w-3xl mx-auto">
+        <div className="relative w-28 h-28 mb-4 flex items-center justify-center">
+          {/* Outer glow element */}
+          <div className="absolute w-[300%] h-[300%] rounded-full bg-violet-400/90 blur-[150px] -z-20"></div>
+          {/* Profile image container */}
+          <div className="w-24 h-24 rounded-full overflow-hidden relative z-10">
+            {musician.profile.profilePicture ? (
+              <Image
+                src={musician.profile.profilePicture}
+                alt={musician.profile.username}
+                width={96}
+                height={96}
                 className="w-full h-full object-cover"
                 onError={(e) => {
                   // Fallback to avatar on error
@@ -166,223 +170,253 @@ export default function MusicianProfilePage({
                   target.onerror = null; // Prevent infinite error loop
                   target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
                     musician.profile.username
-                  )}&background=6D28D9&color=fff&size=256`;
+                  )}&background=6D28D9&color=fff`;
                 }}
               />
-            </div>
+            ) : (
+              <div className="w-full h-full bg-purple-800 flex items-center justify-center text-2xl font-bold">
+                {musician.profile.username.charAt(0).toUpperCase()}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Profile info */}
-        <div className="pt-20 px-8 pb-8">
-          <div className="flex flex-col md:flex-row md:justify-between md:items-end">
-            <div>
-              <h1 className="text-3xl font-bold text-white mb-2">
-                {displayName}
-              </h1>
-              {musician.profile.location && (
-                <p className="text-gray-400 flex items-center mb-1">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-4 w-4 mr-1"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  {musician.profile.location}
-                </p>
-              )}
-            </div>
-          </div>
+        <h1 className="text-xl font-bold mb-1">{displayName}</h1>
 
-          {/* Bio */}
-          {musician.profile.bio && (
-            <div className="mt-6">
-              <h2 className="text-lg font-semibold mb-2 text-white">About</h2>
-              <p className="text-gray-300">{musician.profile.bio}</p>
-            </div>
-          )}
+        {musician.profile.location && (
+          <p className="text-sm text-center text-gray-400">
+            {musician.profile.location}
+          </p>
+        )}
 
-          {/* Instruments */}
-          <div className="mt-6">
-            <h2 className="text-lg font-semibold mb-3 text-white">
-              Instruments
-            </h2>
-            <div className="flex gap-4 flex-wrap">
-              {instruments.map((instrument) => {
-                const isPlayed = hasInstrument(instrument.id);
-                return (
-                  <div
-                    key={instrument.id}
-                    className={`flex flex-col items-center rounded p-3 ${
-                      isPlayed
-                        ? "bg-purple-800/30"
-                        : "bg-gray-800/30 opacity-50"
-                    }`}
-                    title={instrument.label}
-                  >
-                    <div className="w-10 h-10 relative">
-                      <img
-                        src={instrument.icon}
-                        alt={instrument.label}
-                        className={`w-full h-full ${
-                          isPlayed ? "filter-none" : "grayscale"
-                        }`}
-                      />
-                    </div>
-                    <span className="text-xs mt-1 text-gray-300">
-                      {instrument.label}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+        <p className="text-sm text-center text-gray-400 mb-3 mt-3">
+          {musician.profile.bio || "No bio added yet."}
+        </p>
 
-          {/* Genres */}
-          {musician.profile.genres && musician.profile.genres.length > 0 && (
-            <div className="mt-6">
-              <h2 className="text-lg font-semibold mb-2 text-white">Genres</h2>
-              <div className="flex flex-wrap gap-2">
-                {musician.profile.genres.map((genre, idx) => (
-                  <span
-                    key={idx}
-                    className="px-3 py-1 bg-gray-700/50 text-gray-300 rounded-full text-sm"
-                  >
-                    {genre}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Contact */}
-          {musician.email && (
-            <div className="mt-6">
-              <h2 className="text-lg font-semibold mb-2 text-white">Contact</h2>
-              <a
-                href={`mailto:${musician.email}`}
-                className="text-purple-400 hover:underline"
+        {/* Genres */}
+        <div className="flex flex-wrap gap-2 justify-center mb-6">
+          {musician.profile.genres && musician.profile.genres.length > 0 ? (
+            musician.profile.genres.map((genre, i) => (
+              <span
+                key={i}
+                className="px-3 py-1 bg-gray-600 text-sm rounded-full"
               >
-                {musician.email}
-              </a>
+                {genre}
+              </span>
+            ))
+          ) : (
+            <span className="px-3 py-1 bg-gray-600 text-sm rounded-full">
+              No genres selected
+            </span>
+          )}
+        </div>
+
+        {/* Instruments - Show all instruments, highlight selected ones */}
+        <div className="flex justify-center gap-12 mb-8 flex-wrap">
+          {allInstruments.map((instrument) => {
+            const isSelected = hasInstrument(instrument.id);
+            return (
+              <div
+                key={instrument.id}
+                className={`w-10 h-10 rounded-md flex items-center justify-center ${
+                  isSelected ? "filter brightness-0 invert" : ""
+                }`}
+                title={instrument.label}
+              >
+                <div className="relative w-7 h-7">
+                  <Image
+                    src={instrument.svg}
+                    alt={instrument.label}
+                    width={28}
+                    height={28}
+                    className={isSelected ? "opacity-100" : ""}
+                    style={{
+                      filter: isSelected ? "none" : "grayscale(100%)",
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Demos section */}
+      <div className="px-4 mb-4 bg-gray-800/30 p-5 rounded-2xl max-w-3xl mx-auto">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="font-bold text-lg">Demos - {videos.length || 0}</h2>
+          <Link
+            href={`/musician/${musician.id}/videos`}
+            className="text-sm text-gray-400"
+          >
+            View all
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          {videos.length > 0 ? (
+            videos.map((video, i) => (
+              <div
+                key={i}
+                className="relative cursor-pointer"
+                onClick={() => router.push(`/videos/${video.id}`)}
+              >
+                <div className="aspect-video bg-gray-800 rounded-md overflow-hidden">
+                  {video.thumbnailUrl ? (
+                    <Image
+                      src={video.thumbnailUrl}
+                      alt={video.title}
+                      layout="fill"
+                      objectFit="cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <span className="text-2xl">🎵</span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs mt-1 truncate">{video.title}</p>
+                <div className="flex items-center mt-1">
+                  {video.title.toLowerCase().includes("piano") && (
+                    <Image
+                      src="/piano.svg"
+                      alt="Piano"
+                      width={16}
+                      height={16}
+                    />
+                  )}
+                  {video.title.toLowerCase().includes("guitar") && (
+                    <Image
+                      src="/guitar.svg"
+                      alt="Guitar"
+                      width={16}
+                      height={16}
+                    />
+                  )}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="col-span-3 flex flex-col items-center justify-center py-10 text-center">
+              <div className="text-4xl mb-3">🎵</div>
+              <p className="text-gray-400">No demos available.</p>
+              <p className="text-xs text-gray-500 mt-2">
+                This musician hasn&apos;t posted any demos yet
+              </p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Videos/Demos */}
-      {videos.length > 0 && (
-        <div className="bg-gray-800/30 rounded-2xl p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4 text-white">Demos</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {videos.map((video, idx) => (
+      {/* Following section */}
+      <div className="px-4 bg-gray-800/30 p-5 rounded-2xl max-w-3xl mx-auto">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="font-bold text-lg">
+            Following - {musician.following?.length || 0}
+          </h2>
+          <Link
+            href={`/musician/${musician.id}/following`}
+            className="text-sm text-gray-400"
+          >
+            View all
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-4 gap-2">
+          {following.length > 0 ? (
+            following.map((followedUser, i) => (
               <div
-                key={idx}
-                className="cursor-pointer"
-                onClick={() => router.push(`/videos/${video.id}`)}
+                key={i}
+                className="flex flex-col items-center cursor-pointer"
+                onClick={() => router.push(`/musician/${followedUser.id}`)}
               >
-                <div className="aspect-video bg-black rounded-md overflow-hidden relative">
-                  {video.thumbnailUrl ? (
-                    <img
-                      src={video.thumbnailUrl}
-                      alt={video.title}
+                <div className="w-16 h-16 rounded-full overflow-hidden mb-1">
+                  {followedUser.profile.profilePicture ? (
+                    <Image
+                      src={followedUser.profile.profilePicture}
+                      alt={followedUser.profile.username}
+                      width={64}
+                      height={64}
                       className="w-full h-full object-cover"
+                      onError={(e) => {
+                        // Fallback to avatar on error
+                        const target = e.target as HTMLImageElement;
+                        target.onerror = null; // Prevent infinite error loop
+                        target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                          followedUser.profile.username
+                        )}&background=374151&color=fff`;
+                      }}
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <span className="text-4xl">🎵</span>
+                    <div className="w-full h-full bg-gray-700 flex items-center justify-center text-lg">
+                      {followedUser.profile.username.charAt(0).toUpperCase()}
                     </div>
                   )}
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="h-12 w-12 rounded-full bg-black/60 flex items-center justify-center text-white">
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        className="h-6 w-6"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                        />
-                      </svg>
-                    </div>
-                  </div>
                 </div>
-                <h3 className="mt-2 font-medium text-white">{video.title}</h3>
-                {/* Only show description if it exists on the video object */}
-                {video.description ? (
-                  <p className="text-sm text-gray-400">
-                    {(video.description as string).substring(0, 60)}
-                    {(video.description as string).length > 60 ? "..." : ""}
-                  </p>
-                ) : null}
+                <span className="text-xs text-center truncate w-full">
+                  {followedUser.profile.username}
+                </span>
               </div>
-            ))}
-          </div>
+            ))
+          ) : (
+            <div className="col-span-4 flex flex-col items-center justify-center py-10 text-center">
+              <div className="text-4xl mb-3">👥</div>
+              <p className="text-gray-400">Not following anyone.</p>
+              <p className="text-xs text-gray-500 mt-2">
+                This musician isn&apos;t following anyone yet
+              </p>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
-      {/* Bands (if data is available) */}
-      {(musician as any).bands && (musician as any).bands.length > 0 && (
-        <div className="bg-gray-800/30 rounded-2xl p-6">
-          <h2 className="text-xl font-semibold mb-4 text-white">Bands</h2>
-          <div className="space-y-4">
-            {(musician as any).bands.map((band: Band, index: number) => (
+      {/* Bands section (if data is available) */}
+      {musician.bands && musician.bands.length > 0 && (
+        <div className="px-4 mt-4 bg-gray-800/30 p-5 rounded-2xl max-w-3xl mx-auto">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="font-bold text-lg">
+              Bands - {musician.bands.length || 0}
+            </h2>
+          </div>
+          <div className="space-y-3">
+            {musician.bands.map((band, index) => (
               <div
                 key={index}
-                className="flex justify-between items-center p-3 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 cursor-pointer"
+                className="flex items-center p-2 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 cursor-pointer"
                 onClick={() => router.push(`/band/${band.id}`)}
               >
-                <div className="flex items-center">
-                  <div className="w-12 h-12 rounded-full overflow-hidden mr-4">
-                    <img
-                      src={
-                        band.imageUrl ||
-                        `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                          band.name
-                        )}&background=DB2777&color=fff&size=48`
-                      }
-                      alt={band.name}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <div>
-                    <p className="font-medium text-white">{band.name}</p>
-                    {band.role && (
-                      <p className="text-sm text-gray-400">{band.role}</p>
-                    )}
-                  </div>
+                <div className="w-12 h-12 rounded-full overflow-hidden mr-3 flex-shrink-0">
+                  <img
+                    src={
+                      band.imageUrl ||
+                      `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                        band.name
+                      )}&background=DB2777&color=fff&size=48`
+                    }
+                    alt={band.name}
+                    className="w-full h-full object-cover"
+                  />
                 </div>
-                <span className="text-purple-400">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </span>
+                <div className="flex-grow min-w-0">
+                  <p className="font-medium text-white truncate">{band.name}</p>
+                  {band.role && (
+                    <p className="text-xs text-gray-400 truncate">
+                      {band.role}
+                    </p>
+                  )}
+                </div>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5 text-gray-400"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                    clipRule="evenodd"
+                  />
+                </svg>
               </div>
             ))}
           </div>

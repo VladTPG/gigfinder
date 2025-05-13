@@ -48,7 +48,7 @@ export const registerUser = async (
         bio: "",
         instruments: [],
         genres: [],
-        profilePicture: "",
+        profilePicture: user.photoURL || "", // Store the user's photoURL if available
         location: "",
       },
       followers: [],

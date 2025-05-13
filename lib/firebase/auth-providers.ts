@@ -1,6 +1,10 @@
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { auth } from "./config";
-import { createDocumentWithId, getDocumentById } from "./firestore";
+import {
+  createDocumentWithId,
+  getDocumentById,
+  updateDocument,
+} from "./firestore";
 import { IUser, UserRole } from "@/lib/types";
 import { serverTimestamp } from "firebase/firestore";
 
@@ -36,6 +40,21 @@ export const signInWithGoogle = async () => {
       };
 
       await createDocumentWithId<IUser>("users", user.uid, userData);
+    }
+    // If user exists but their Google profile picture URL has changed or is empty in our database
+    else if (
+      user.photoURL &&
+      (!existingUser.profile.profilePicture ||
+        existingUser.profile.profilePicture !== user.photoURL)
+    ) {
+      // Update just the profile picture field
+      await updateDocument("users", user.uid, {
+        profile: {
+          ...existingUser.profile,
+          profilePicture: user.photoURL,
+        },
+        updatedAt: serverTimestamp(),
+      });
     }
 
     return user;

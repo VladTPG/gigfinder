@@ -3,9 +3,15 @@
 import { useState, useEffect, KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { db } from "@/lib/firebase/config";
-import { collection, query, where, getDocs, limit } from "firebase/firestore";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  limit,
+  orderBy,
+} from "firebase/firestore";
 import { SearchIcon, MusicIcon, UsersIcon, HomeIcon } from "lucide-react";
 
 interface SearchResult {
@@ -32,6 +38,7 @@ export default function SearchPage() {
   const [error, setError] = useState<string | null>(null);
   const [debug, setDebug] = useState<string[]>([]); // For debugging
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
 
   // Load recent searches from localStorage on component mount
   useEffect(() => {
@@ -44,6 +51,25 @@ export default function SearchPage() {
       }
     }
   }, []);
+
+  // Debounce search term changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300); // 300ms debounce time
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Trigger search when debounced search term changes
+  useEffect(() => {
+    if (debouncedSearchTerm) {
+      performSearch(debouncedSearchTerm);
+    } else {
+      // Clear results when search is empty
+      setSearchResults([]);
+    }
+  }, [debouncedSearchTerm, searchType]);
 
   // Save a new search term to recent searches
   const saveRecentSearch = (term: string) => {
@@ -77,24 +103,21 @@ export default function SearchPage() {
   // Handle keyboard shortcut
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
-      handleSearch();
+      // Save the search term to recent searches on Enter
+      if (searchTerm.trim()) {
+        saveRecentSearch(searchTerm);
+      }
     }
   };
 
-  const handleSearch = async () => {
-    if (searchTerm.trim() === "") {
-      alert("Please enter a search term.");
+  const performSearch = async (term: string) => {
+    if (!term.trim()) {
       return;
     }
 
     setIsLoading(true);
-    setSearchResults([]);
     setError(null);
-    setDebug([`Searching for ${searchType}: ${searchTerm}`]);
-
-    // Save this search term - moved before the search to ensure it's saved
-    // even if the search fails
-    saveRecentSearch(searchTerm);
+    setDebug([`Searching for ${searchType}: ${term}`]);
 
     try {
       // Map the user-friendly search type to the correct collection name
@@ -120,58 +143,58 @@ export default function SearchPage() {
           break;
       }
 
-      const sanitizedSearchTerm = searchTerm.trim();
+      const sanitizedSearchTerm = term.trim().toLowerCase(); // Normalize for case-insensitive search
       addDebug(
         `Using collection: ${collectionName}, searching field: ${nameField}`
       );
 
       // Different search approach based on type
       if (searchType === "musician") {
-        // For musicians, use a simpler query that doesn't require a composite index
-        // Just get all musicians and filter client-side
-        addDebug(
-          "Using client-side filtering for musicians (no index required)"
-        );
+        // For musicians, use an indexed query for better performance
+        // This assumes you have created an index on the role field and profile.username fields
+        addDebug("Using indexed query for musicians");
 
-        const simpleQuery = query(
+        // Query by first characters (prefix search) for musicians using composite index
+        // Requires a composite index on fields role (ascending) and profile.username (ascending)
+        const musicianQuery = query(
           collection(db, collectionName),
           where("role", "==", "musician"),
-          limit(100) // Increase limit since we're filtering client-side
+          orderBy("profile.username"),
+          // The startAt and endAt approach works well with Firebase indexes
+          where("profile.username", ">=", sanitizedSearchTerm),
+          where("profile.username", "<=", sanitizedSearchTerm + "\uf8ff"),
+          limit(20)
         );
 
-        const querySnapshot = await getDocs(simpleQuery);
-        addDebug(`Query returned ${querySnapshot.size} musicians total`);
+        const querySnapshot = await getDocs(musicianQuery);
+        addDebug(`Query returned ${querySnapshot.size} musicians`);
 
-        // Filter the results client-side for a case-insensitive search
+        // Process results
         const results: SearchResult[] = [];
         querySnapshot.forEach((doc) => {
           const data = doc.data();
-          // Get the username with nested path safety
           const username = data.profile?.username || "";
 
-          // Case-insensitive includes check
-          if (
-            username.toLowerCase().includes(sanitizedSearchTerm.toLowerCase())
-          ) {
-            results.push({
-              id: doc.id,
-              name: username,
-              type: searchType,
-              description: data.profile?.bio || "",
-              imageUrl: data.profile?.profilePicture || "",
-              location: data.profile?.location || "",
-              genres: data.profile?.genres || [],
-              instruments: data.profile?.instruments || [],
-            });
-          }
+          results.push({
+            id: doc.id,
+            name: username,
+            type: searchType,
+            description: data.profile?.bio || "",
+            imageUrl: data.profile?.profilePicture || "",
+            location: data.profile?.location || "",
+            genres: data.profile?.genres || [],
+            instruments: data.profile?.instruments || [],
+          });
         });
 
-        addDebug(`Filtered to ${results.length} matching musicians`);
+        addDebug(`Found ${results.length} matching musicians`);
         setSearchResults(results);
       } else {
-        // For bands and venues, use the original query
+        // For bands and venues, use indexed queries
+        // This assumes you have created an index on the name field
         const q = query(
           collection(db, collectionName),
+          orderBy(nameField),
           where(nameField, ">=", sanitizedSearchTerm),
           where(nameField, "<=", sanitizedSearchTerm + "\uf8ff"),
           limit(20)
@@ -225,23 +248,20 @@ export default function SearchPage() {
     setIsLoading(false);
   };
 
-  // Generate a placeholder avatar for results without images
   const getAvatarPlaceholder = (name: string, type: string) => {
+    // Format the first letter of the name and generate a URL for a placeholder avatar
+    const initial = name.charAt(0).toUpperCase();
     const colors = {
-      musician: "#6D28D9", // Purple
-      band: "#DB2777", // Pink
-      venue: "#2563EB", // Blue
+      musician: "6D28D9", // Purple
+      band: "DB2777", // Pink
+      venue: "0369A1", // Blue
     };
-
-    const color = colors[type as keyof typeof colors] || "#6B7280";
-    const initials = name.charAt(0).toUpperCase() || "?";
-
+    const color = colors[type as keyof typeof colors] || "6D28D9";
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(
-      initials
-    )}&background=${color.replace("#", "")}&color=fff&size=120`;
+      initial
+    )}&background=${color}&color=fff`;
   };
 
-  // Get icon for result type
   const getTypeIcon = (type: "musician" | "band" | "venue") => {
     switch (type) {
       case "musician":
@@ -282,159 +302,6 @@ export default function SearchPage() {
                 onClick={() => {
                   // Update the search type in state
                   setSearchType(type);
-
-                  // If there's already a search term, perform a new search with the newly selected type
-                  if (searchTerm.trim()) {
-                    // Create a direct search function with the new type
-                    const searchWithNewType = async () => {
-                      const newType = type; // Directly use the new type from the map function
-
-                      setIsLoading(true);
-                      setSearchResults([]);
-                      setError(null);
-                      setDebug([`Searching for ${newType}: ${searchTerm}`]);
-
-                      try {
-                        // Map the user-friendly search type to the correct collection name
-                        let collectionName;
-                        let nameField;
-
-                        // Determine the correct collection and field to search based on the new type
-                        switch (newType) {
-                          case "musician":
-                            collectionName = "users";
-                            nameField = "profile.username";
-                            break;
-                          case "band":
-                            collectionName = "bands";
-                            nameField = "name";
-                            break;
-                          case "venue":
-                            collectionName = "venues";
-                            nameField = "name";
-                            break;
-                        }
-
-                        const sanitizedSearchTerm = searchTerm.trim();
-                        addDebug(
-                          `Using collection: ${collectionName}, searching field: ${nameField}`
-                        );
-
-                        // Different search approach based on type
-                        if (newType === "musician") {
-                          // For musicians, use client-side filtering
-                          addDebug(
-                            "Using client-side filtering for musicians (no index required)"
-                          );
-
-                          const simpleQuery = query(
-                            collection(db, collectionName),
-                            where("role", "==", "musician"),
-                            limit(100)
-                          );
-
-                          const querySnapshot = await getDocs(simpleQuery);
-                          addDebug(
-                            `Query returned ${querySnapshot.size} musicians total`
-                          );
-
-                          // Filter the results client-side
-                          const results: SearchResult[] = [];
-                          querySnapshot.forEach((doc) => {
-                            const data = doc.data();
-                            const username = data.profile?.username || "";
-
-                            // Case-insensitive includes check
-                            if (
-                              username
-                                .toLowerCase()
-                                .includes(sanitizedSearchTerm.toLowerCase())
-                            ) {
-                              results.push({
-                                id: doc.id,
-                                name: username,
-                                type: newType,
-                                description: data.profile?.bio || "",
-                                imageUrl: data.profile?.profilePicture || "",
-                                location: data.profile?.location || "",
-                                genres: data.profile?.genres || [],
-                                instruments: data.profile?.instruments || [],
-                              });
-                            }
-                          });
-
-                          addDebug(
-                            `Filtered to ${results.length} matching musicians`
-                          );
-                          setSearchResults(results);
-                        } else {
-                          // For bands and venues
-                          const q = query(
-                            collection(db, collectionName),
-                            where(nameField, ">=", sanitizedSearchTerm),
-                            where(
-                              nameField,
-                              "<=",
-                              sanitizedSearchTerm + "\uf8ff"
-                            ),
-                            limit(20)
-                          );
-
-                          addDebug(`Executing ${newType} search query`);
-                          const querySnapshot = await getDocs(q);
-                          addDebug(
-                            `Query returned ${querySnapshot.size} results`
-                          );
-
-                          // Process results
-                          const results: SearchResult[] = [];
-                          querySnapshot.forEach((doc) => {
-                            const data = doc.data();
-                            const name = data.name || `Unknown ${newType}`;
-
-                            // Build result with type-specific fields
-                            const result: SearchResult = {
-                              id: doc.id,
-                              name: name,
-                              type: newType,
-                              description: data.description || "",
-                              imageUrl: data.imageUrl || "",
-                              location: data.location || "",
-                              genres: data.genres || [],
-                            };
-
-                            // Add type-specific properties
-                            if (newType === "band") {
-                              result.members = data.members?.length || 0;
-                            } else if (newType === "venue") {
-                              result.capacity = data.capacity || 0;
-                            }
-
-                            results.push(result);
-                          });
-
-                          setSearchResults(results);
-                        }
-                      } catch (err: Error | unknown) {
-                        console.error("Error fetching search results:", err);
-                        addDebug(
-                          `Error: ${
-                            err instanceof Error ? err.message : "Unknown error"
-                          }`
-                        );
-                        setError(
-                          `Failed to fetch results: ${
-                            err instanceof Error ? err.message : "Unknown error"
-                          }`
-                        );
-                      }
-
-                      setIsLoading(false);
-                    };
-
-                    // Execute the search with the new type
-                    searchWithNewType();
-                  }
                 }}
                 className={`flex-1 py-3 px-2 capitalize flex items-center justify-center gap-2 transition-colors ${
                   searchType === type
@@ -447,215 +314,21 @@ export default function SearchPage() {
               </button>
             ))}
           </div>
-          <Button
-            onClick={handleSearch}
-            disabled={isLoading}
-            className="h-12 min-w-[100px] bg-purple-700 hover:bg-purple-600"
-          >
-            {isLoading ? (
-              <span className="flex items-center gap-2">
-                <svg
-                  className="animate-spin h-4 w-4 text-white"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  ></circle>
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  ></path>
-                </svg>
-                Searching...
-              </span>
-            ) : (
-              <span className="flex items-center gap-2">
-                <SearchIcon className="h-4 w-4" />
-                Search
-              </span>
-            )}
-          </Button>
         </div>
 
         {/* Recent searches */}
-        {recentSearches.length > 0 && (
-          <div className="mt-4">
-            <p className="text-sm text-gray-400 mb-2">Recent searches:</p>
+        {recentSearches.length > 0 && !searchTerm && (
+          <div className="mt-6">
+            <h2 className="text-sm font-medium text-gray-400 mb-2">
+              Recent searches:
+            </h2>
             <div className="flex flex-wrap gap-2">
               {recentSearches.map((term, index) => (
                 <button
                   key={index}
-                  className="px-3 py-1 text-sm bg-gray-800 text-gray-300 rounded-full hover:bg-gray-700 transition-colors"
+                  className="px-3 py-1 rounded-full bg-gray-700/50 text-sm hover:bg-gray-600/50 transition-colors"
                   onClick={() => {
                     setSearchTerm(term);
-                    // Create a custom search function that uses the term directly
-                    const performSearch = async () => {
-                      if (term.trim() === "") {
-                        alert("Please enter a search term.");
-                        return;
-                      }
-
-                      setIsLoading(true);
-                      setSearchResults([]);
-                      setError(null);
-                      setDebug([`Searching for ${searchType}: ${term}`]);
-
-                      // Save this search term
-                      saveRecentSearch(term);
-
-                      try {
-                        // Map the user-friendly search type to the correct collection name
-                        let collectionName;
-                        let nameField;
-
-                        // Determine the correct collection and field to search based on the type
-                        switch (searchType) {
-                          case "musician":
-                            // For musicians, we look in the "users" collection where role is "musician"
-                            collectionName = "users";
-                            nameField = "profile.username"; // Based on IUser interface
-                            break;
-                          case "band":
-                            // For bands, we look in a dedicated "bands" collection
-                            collectionName = "bands";
-                            nameField = "name"; // Assuming the field is "name" in bands collection
-                            break;
-                          case "venue":
-                            // For venues, we look in a dedicated "venues" collection
-                            collectionName = "venues";
-                            nameField = "name"; // Assuming the field is "name" in venues collection
-                            break;
-                        }
-
-                        const sanitizedSearchTerm = term.trim();
-                        addDebug(
-                          `Using collection: ${collectionName}, searching field: ${nameField}`
-                        );
-
-                        // Different search approach based on type
-                        if (searchType === "musician") {
-                          // For musicians, use a simpler query that doesn't require a composite index
-                          // Just get all musicians and filter client-side
-                          addDebug(
-                            "Using client-side filtering for musicians (no index required)"
-                          );
-
-                          const simpleQuery = query(
-                            collection(db, collectionName),
-                            where("role", "==", "musician"),
-                            limit(100) // Increase limit since we're filtering client-side
-                          );
-
-                          const querySnapshot = await getDocs(simpleQuery);
-                          addDebug(
-                            `Query returned ${querySnapshot.size} musicians total`
-                          );
-
-                          // Filter the results client-side for a case-insensitive search
-                          const results: SearchResult[] = [];
-                          querySnapshot.forEach((doc) => {
-                            const data = doc.data();
-                            // Get the username with nested path safety
-                            const username = data.profile?.username || "";
-
-                            // Case-insensitive includes check
-                            if (
-                              username
-                                .toLowerCase()
-                                .includes(sanitizedSearchTerm.toLowerCase())
-                            ) {
-                              results.push({
-                                id: doc.id,
-                                name: username,
-                                type: searchType,
-                                description: data.profile?.bio || "",
-                                imageUrl: data.profile?.profilePicture || "",
-                                location: data.profile?.location || "",
-                                genres: data.profile?.genres || [],
-                                instruments: data.profile?.instruments || [],
-                              });
-                            }
-                          });
-
-                          addDebug(
-                            `Filtered to ${results.length} matching musicians`
-                          );
-                          setSearchResults(results);
-                        } else {
-                          // For bands and venues, use the original query
-                          const q = query(
-                            collection(db, collectionName),
-                            where(nameField, ">=", sanitizedSearchTerm),
-                            where(
-                              nameField,
-                              "<=",
-                              sanitizedSearchTerm + "\uf8ff"
-                            ),
-                            limit(20)
-                          );
-
-                          addDebug(`Executing ${searchType} search query`);
-                          const querySnapshot = await getDocs(q);
-                          addDebug(
-                            `Query returned ${querySnapshot.size} results`
-                          );
-
-                          // Process regular query results
-                          const results: SearchResult[] = [];
-                          querySnapshot.forEach((doc) => {
-                            const data = doc.data();
-                            const name = data.name || `Unknown ${searchType}`;
-
-                            // Build result with type-specific fields
-                            const result: SearchResult = {
-                              id: doc.id,
-                              name: name,
-                              type: searchType,
-                              description: data.description || "",
-                              imageUrl: data.imageUrl || "",
-                              location: data.location || "",
-                              genres: data.genres || [],
-                            };
-
-                            // Add type-specific properties
-                            if (searchType === "band") {
-                              result.members = data.members?.length || 0;
-                            } else if (searchType === "venue") {
-                              result.capacity = data.capacity || 0;
-                            }
-
-                            results.push(result);
-                          });
-
-                          setSearchResults(results);
-                        }
-                      } catch (err: Error | unknown) {
-                        console.error("Error fetching search results:", err);
-                        addDebug(
-                          `Error: ${
-                            err instanceof Error ? err.message : "Unknown error"
-                          }`
-                        );
-                        setError(
-                          `Failed to fetch results: ${
-                            err instanceof Error ? err.message : "Unknown error"
-                          }`
-                        );
-                      }
-
-                      setIsLoading(false);
-                    };
-
-                    // Execute the search function
-                    performSearch();
                   }}
                 >
                   {term}
@@ -688,6 +361,7 @@ export default function SearchPage() {
         </div>
       )}
 
+      {/* Search results list */}
       {!isLoading && searchResults.length > 0 && (
         <div className="grid grid-cols-1 gap-4 mt-4">
           {searchResults.map((result) => (

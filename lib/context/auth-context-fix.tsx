@@ -96,6 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               instruments: [],
               genres: [],
               location: "",
+              profilePicture: currentUser.photoURL || "",
             },
             role: null as any, // Set to null to ensure user goes through onboarding
             followers: [],
@@ -123,6 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           instruments: [],
           genres: [],
           location: "",
+          profilePicture: user.photoURL || "",
         },
         role: "MUSICIAN",
         followers: [],

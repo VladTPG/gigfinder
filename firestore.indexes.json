@@ -1,4 +1,23 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "role", "order": "ASCENDING" },
+        { "fieldPath": "profile.username", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "bands",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "name", "order": "ASCENDING" }]
+    },
+    {
+      "collectionGroup": "venues",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "name", "order": "ASCENDING" }]
+    }
+  ],
   "fieldOverrides": []
 }
