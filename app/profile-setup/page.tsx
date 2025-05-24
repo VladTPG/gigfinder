@@ -11,6 +11,7 @@ import {
 } from "@/lib/firebase/firestore";
 import { UserRole, IUser, IVenue } from "@/lib/types";
 import ProtectedRoute from "@/components/auth/protected-route";
+import { uploadFileToMinio } from "@/lib/minio";
 
 // Define instrument options
 const instrumentOptions = [
@@ -36,6 +37,7 @@ export default function ProfileSetupPage() {
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [venueBio, setVenueBio] = useState("");
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   const router = useRouter();
 
@@ -81,6 +83,48 @@ export default function ProfileSetupPage() {
         return [...prev, instrument];
       }
     });
+  };
+
+  const handlePhotoUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      setError("Please select an image file");
+      return;
+    }
+
+    // Validate file size (5MB limit)
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Image must be smaller than 5MB");
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+    setError("");
+
+    try {
+      // Generate a unique filename
+      const timestamp = Date.now();
+      const randomString = Math.random().toString(36).substring(2);
+      const fileExtension = file.name.split(".").pop();
+      const filename = `venue-${timestamp}-${randomString}.${fileExtension}`;
+      const uploadPath = `venues/${filename}`;
+
+      console.log("Uploading venue photo:", filename);
+      const imageUrl = await uploadFileToMinio(file, uploadPath);
+
+      setVenuePhotos((prev) => [...prev, imageUrl]);
+      console.log("Photo uploaded successfully:", imageUrl);
+    } catch (error) {
+      console.error("Photo upload error:", error);
+      setError("Failed to upload photo. Please try again.");
+    } finally {
+      setIsUploadingPhoto(false);
+    }
   };
 
   const handleNext = () => {
@@ -459,31 +503,48 @@ export default function ProfileSetupPage() {
               </div>
             ))}
 
-            {/* Photo upload placeholder */}
-            <div
-              className="aspect-square border-2 border-dashed border-border rounded-md flex flex-col items-center justify-center cursor-pointer hover:bg-background"
-              onClick={() => {
-                // Mock photo upload for now
-                const mockPhoto = `https://source.unsplash.com/random/300x300?venue,bar&sig=${Math.random()}`;
-                setVenuePhotos([...venuePhotos, mockPhoto]);
-              }}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="24"
-                height="24"
-                stroke="currentColor"
-                strokeWidth="2"
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="mb-2"
-              >
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                <polyline points="21 15 16 10 5 21"></polyline>
-              </svg>
-              <span className="text-sm">Add photo</span>
+            {/* Photo upload button */}
+            <div className="aspect-square border-2 border-dashed border-border rounded-md flex flex-col items-center justify-center cursor-pointer hover:bg-background relative">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoUpload}
+                disabled={isUploadingPhoto}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
+
+              {isUploadingPhoto ? (
+                <>
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-accent mb-2"></div>
+                  <span className="text-sm">Uploading...</span>
+                </>
+              ) : (
+                <>
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="24"
+                    height="24"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="mb-2"
+                  >
+                    <rect
+                      x="3"
+                      y="3"
+                      width="18"
+                      height="18"
+                      rx="2"
+                      ry="2"
+                    ></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                  </svg>
+                  <span className="text-sm">Add photo</span>
+                </>
+              )}
             </div>
           </div>
 

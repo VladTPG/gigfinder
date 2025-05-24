@@ -37,6 +37,7 @@ export default function ProtectedRoute({
       }
 
       // If we require no auth (like sign in page) and there's a user, redirect to feed
+      // But only if we're actually on a page that shouldn't have auth (like signin/signup)
       if (!requireAuth && user) {
         console.log("Redirecting to feed - already authenticated");
         setRedirecting(true);

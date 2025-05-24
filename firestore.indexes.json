@@ -17,6 +17,38 @@
       "collectionGroup": "venues",
       "queryScope": "COLLECTION",
       "fields": [{ "fieldPath": "name", "order": "ASCENDING" }]
+    },
+    {
+      "collectionGroup": "gigs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "gigs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "venueId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "gigApplications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "gigId", "order": "ASCENDING" },
+        { "fieldPath": "appliedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "gigApplications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "applicantId", "order": "ASCENDING" },
+        { "fieldPath": "appliedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -5,22 +5,18 @@ import { useAuth } from "@/lib/context/auth-context-fix";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getDocumentById } from "@/lib/firebase/firestore";
-import { IVenue, UserRole, IManagerProfile } from "@/lib/types";
-
-interface GigPreview {
-  id: string;
-  title: string;
-  date: string;
-  image: string;
-}
+import { getDocumentById, updateDocument } from "@/lib/firebase/firestore";
+import { getGigs, deleteGig } from "@/lib/firebase/gigs";
+import { uploadFileToMinio } from "@/lib/minio";
+import { IVenue, UserRole, IManagerProfile, IGig } from "@/lib/types";
 
 export default function VenueProfilePage() {
   const { userProfile } = useAuth();
   const router = useRouter();
   const [venue, setVenue] = useState<IVenue | null>(null);
-  const [publishedGigs, setPublishedGigs] = useState<GigPreview[]>([]);
+  const [publishedGigs, setPublishedGigs] = useState<IGig[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   useEffect(() => {
     const fetchProfileData = async () => {
@@ -41,19 +37,16 @@ export default function VenueProfilePage() {
           setVenue(venueData);
         }
 
-        // Fetch published gigs (placeholder for now)
-        if (
-          managerProfile.publishedGigs &&
-          managerProfile.publishedGigs.length > 0
-        ) {
-          // For demonstration, just create placeholder data
-          const mockGigs = managerProfile.publishedGigs.map((gigId, index) => ({
-            id: gigId,
-            title: `Live Music Night ${index + 1}`,
-            date: new Date(Date.now() + index * 86400000).toISOString(), // sequential dates
-            image: `https://source.unsplash.com/random/300x200?concert&sig=${index}`,
-          }));
-          setPublishedGigs(mockGigs);
+        // Fetch published gigs created by this venue manager
+        try {
+          const userGigs = await getGigs({
+            venueId: managerProfile.venueId || userProfile.id,
+            limit: 50, // Get all gigs for this venue
+          });
+          setPublishedGigs(userGigs);
+        } catch (error) {
+          console.error("Error fetching venue gigs:", error);
+          setPublishedGigs([]);
         }
       } catch (err) {
         console.error("Error fetching venue profile data:", err);
@@ -64,6 +57,53 @@ export default function VenueProfilePage() {
 
     fetchProfileData();
   }, [userProfile, router]);
+
+  const handlePhotoUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file || !venue || !userProfile) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file");
+      return;
+    }
+
+    // Validate file size (5MB limit)
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image must be smaller than 5MB");
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+
+    try {
+      // Generate a unique filename
+      const timestamp = Date.now();
+      const randomString = Math.random().toString(36).substring(2);
+      const fileExtension = file.name.split(".").pop();
+      const filename = `venue-${timestamp}-${randomString}.${fileExtension}`;
+      const uploadPath = `venues/${filename}`;
+
+      console.log("Uploading venue photo:", filename);
+      const imageUrl = await uploadFileToMinio(file, uploadPath);
+
+      // Update venue images in Firestore
+      const updatedImages = [...(venue.images || []), imageUrl];
+      await updateDocument("venues", venue.id, { images: updatedImages });
+
+      // Update local state
+      setVenue((prev) => (prev ? { ...prev, images: updatedImages } : null));
+
+      console.log("Photo uploaded successfully:", imageUrl);
+    } catch (error) {
+      console.error("Photo upload error:", error);
+      alert("Failed to upload photo. Please try again.");
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
 
   if (!userProfile || !venue) {
     return (
@@ -127,9 +167,12 @@ export default function VenueProfilePage() {
         <h1 className="text-xl font-bold mb-1">{venue.name}</h1>
         <p className="text-sm text-gray-400 mb-2">{venue.location}</p>
 
-        <button className="bg-gray-600 text-sm rounded-full px-4 py-1 my-3 hover:bg-gray-700 hover:shadow-center-glow transition-all duration-300">
+        <Link
+          href="/venue-profile/edit"
+          className="bg-gray-600 text-sm rounded-full px-4 py-1 my-3 hover:bg-gray-700 hover:shadow-center-glow transition-all duration-300 inline-block text-center"
+        >
           Edit venue
-        </button>
+        </Link>
 
         <p className="text-sm text-center text-gray-400 mb-3">
           {managerProfile.bio || "No description added yet."}
@@ -180,7 +223,21 @@ export default function VenueProfilePage() {
       <div className="px-4 mb-4 bg-gray-800/30 p-5 rounded-2xl">
         <div className="flex justify-between items-center mb-4">
           <h2 className="font-bold text-lg">Venue Photos</h2>
-          <button className="text-sm text-gray-400">Add Photos</button>
+          <div className="relative">
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handlePhotoUpload}
+              disabled={isUploadingPhoto}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            />
+            <button
+              className="text-sm text-gray-400 hover:text-white transition-colors"
+              disabled={isUploadingPhoto}
+            >
+              {isUploadingPhoto ? "Uploading..." : "Add Photos"}
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-3 gap-2">
@@ -220,36 +277,78 @@ export default function VenueProfilePage() {
 
         <div className="space-y-3">
           {publishedGigs.length > 0 ? (
-            publishedGigs.map((gig, i) => (
+            publishedGigs.map((gig) => (
               <div
-                key={i}
+                key={gig.id}
                 className="flex gap-3 items-center bg-gray-700/30 p-3 rounded-lg"
               >
                 <div className="w-16 h-16 bg-gray-800 rounded-md overflow-hidden relative flex-shrink-0">
-                  <Image
-                    src={gig.image}
-                    alt={gig.title}
-                    layout="fill"
-                    objectFit="cover"
-                  />
+                  {gig.images && gig.images.length > 0 ? (
+                    <Image
+                      src={gig.images[0]}
+                      alt={gig.title}
+                      layout="fill"
+                      objectFit="cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-purple-800 flex items-center justify-center text-xl font-bold">
+                      🎵
+                    </div>
+                  )}
                 </div>
                 <div className="flex-grow overflow-hidden">
                   <h3 className="font-medium truncate">{gig.title}</h3>
                   <p className="text-sm text-gray-400">
-                    {new Date(gig.date).toLocaleDateString("en-US", {
+                    {gig.date.toLocaleDateString("en-US", {
                       weekday: "short",
                       year: "numeric",
                       month: "short",
                       day: "numeric",
                     })}
                   </p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {gig.startTime} - {gig.endTime} • {gig.status}
+                  </p>
                 </div>
-                <Link
-                  href={`/gigs/${gig.id}`}
-                  className="py-1 px-3 text-sm bg-purple-600 rounded-full flex-shrink-0 hover:bg-purple-700 transition"
-                >
-                  View
-                </Link>
+                <div className="flex gap-2">
+                  <Link
+                    href={`/gigs/${gig.id}`}
+                    className="py-1 px-3 text-sm bg-purple-600 rounded-full flex-shrink-0 hover:bg-purple-700 transition"
+                  >
+                    View
+                  </Link>
+                  <Link
+                    href={`/gigs/${gig.id}/edit`}
+                    className="py-1 px-3 text-sm bg-gray-600 rounded-full flex-shrink-0 hover:bg-gray-700 transition"
+                  >
+                    Edit
+                  </Link>
+                  {gig.status === "draft" && (
+                    <button
+                      onClick={async () => {
+                        if (
+                          confirm(
+                            "Are you sure you want to delete this draft gig? This action cannot be undone."
+                          )
+                        ) {
+                          try {
+                            await deleteGig(gig.id);
+                            // Remove the deleted gig from the state
+                            setPublishedGigs((prev) =>
+                              prev.filter((g) => g.id !== gig.id)
+                            );
+                          } catch (error) {
+                            console.error("Error deleting gig:", error);
+                            alert("Failed to delete gig. Please try again.");
+                          }
+                        }
+                      }}
+                      className="py-1 px-3 text-sm bg-red-600 rounded-full flex-shrink-0 hover:bg-red-700 transition text-white"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
               </div>
             ))
           ) : (

@@ -22,8 +22,7 @@ export default function RedirectPage() {
           console.log("User authenticated, redirecting to /feed");
           setDebugMessage("Authenticated - redirecting to feed");
           setRedirected(true);
-          // Redirect to a different route, not back to root
-          window.location.href = "/feed";
+          router.replace("/feed");
         } else {
           console.log("Not authenticated, redirecting to signin");
           setDebugMessage("Not authenticated - redirecting to signin");

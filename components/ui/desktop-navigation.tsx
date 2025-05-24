@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "@/lib/context/auth-context-fix";
 import SignOutButton from "@/components/auth/sign-out-button";
+import { UserRole } from "@/lib/types";
 
 import {
   Sidebar,
@@ -22,18 +23,25 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
-const navItems = [
-  { href: "/feed", label: "FEED", icon: HomeIcon },
-  { href: "/bands", label: "BANDS", icon: UsersIcon },
-  { href: "/gigs", label: "GIGS", icon: CalendarIcon },
-  { href: "/search", label: "SEARCH", icon: SearchIcon },
-  { href: "/profile", label: "PROFILE", icon: UserIcon },
-];
-
 export function DesktopNavigation() {
   const pathname = usePathname();
   const [hovered, setHovered] = useState<string | null>(null);
-  const { user } = useAuth();
+  const { user, userProfile } = useAuth();
+
+  // Dynamic navigation items based on user role
+  const getNavItems = () => {
+    const profileHref =
+      userProfile?.role === UserRole.MANAGER ? "/venue-profile" : "/profile";
+    return [
+      { href: "/feed", label: "FEED", icon: HomeIcon },
+      { href: "/bands", label: "BANDS", icon: UsersIcon },
+      { href: "/gigs", label: "GIGS", icon: CalendarIcon },
+      { href: "/search", label: "SEARCH", icon: SearchIcon },
+      { href: profileHref, label: "PROFILE", icon: UserIcon },
+    ];
+  };
+
+  const navItems = getNavItems();
 
   return (
     <Sidebar className="p-4 flex flex-col gap-6">

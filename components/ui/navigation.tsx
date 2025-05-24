@@ -4,6 +4,8 @@ import { HomeIcon, UsersIcon, CalendarIcon, UserIcon } from "lucide-react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useState } from "react";
+import { useAuth } from "@/lib/context/auth-context-fix";
+import { UserRole } from "@/lib/types";
 
 import {
   Sidebar,
@@ -14,17 +16,25 @@ import { Separator } from "@/components/ui/separator";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 
-const navItems = [
-  { href: "/", label: "HOME", icon: HomeIcon },
-  { href: "/bands", label: "BANDS", icon: UsersIcon },
-  { href: "/gigs", label: "GIGS", icon: CalendarIcon },
-  { href: "/profile", label: "PROFILE", icon: UserIcon },
-];
-
 export function Navigation() {
   const pathname = usePathname();
   const isMobile = useIsMobile();
   const [hovered, setHovered] = useState<string | null>(null);
+  const { userProfile } = useAuth();
+
+  // Dynamic navigation items based on user role
+  const getNavItems = () => {
+    const profileHref =
+      userProfile?.role === UserRole.MANAGER ? "/venue-profile" : "/profile";
+    return [
+      { href: "/", label: "HOME", icon: HomeIcon },
+      { href: "/bands", label: "BANDS", icon: UsersIcon },
+      { href: "/gigs", label: "GIGS", icon: CalendarIcon },
+      { href: profileHref, label: "PROFILE", icon: UserIcon },
+    ];
+  };
+
+  const navItems = getNavItems();
 
   if (isMobile) {
     return (
