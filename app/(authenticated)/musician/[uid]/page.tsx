@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getDocumentById } from "@/lib/firebase/firestore";
+import { getDocumentById, queryDocuments } from "@/lib/firebase/firestore";
 import { useRouter } from "next/navigation";
 import { IUser, IVideo } from "@/lib/types";
 import Image from "next/image";
 import Link from "next/link";
 import { use } from "react";
+import VideoPlayer from "@/components/VideoPlayer";
+import { getYouTubeThumbnail } from "@/lib/utils";
 
 // Instruments with their SVG paths
 const allInstruments = [
@@ -44,6 +46,7 @@ export default function MusicianProfilePage({
   const [following, setFollowing] = useState<IUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<IVideo | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -55,15 +58,11 @@ export default function MusicianProfilePage({
         if (userData && userData.role === "musician") {
           setMusician(userData);
 
-          // Fetch videos if available
-          if (userData.videos && userData.videos.length > 0) {
-            const videoPromises = userData.videos
-              .slice(0, 3) // Limit to 3 videos for now
-              .map((videoId) => getDocumentById<IVideo>("videos", videoId));
-
-            const videoResults = await Promise.all(videoPromises);
-            setVideos(videoResults.filter(Boolean) as IVideo[]);
-          }
+                  // Fetch videos by userId (new method)
+        const userVideos = await queryDocuments("videos", [
+          { field: "userId", operator: "==", value: uid }
+        ]);
+        setVideos((userVideos as IVideo[]).slice(0, 3));
 
           // Fetch following if available
           if (userData.following && userData.following.length > 0) {
@@ -256,42 +255,76 @@ export default function MusicianProfilePage({
         <div className="grid grid-cols-3 gap-2">
           {videos.length > 0 ? (
             videos.map((video, i) => (
-              <div
-                key={i}
-                className="relative cursor-pointer"
-                onClick={() => router.push(`/videos/${video.id}`)}
-              >
-                <div className="aspect-video bg-gray-800 rounded-md overflow-hidden">
-                  {video.thumbnailUrl ? (
+              <div key={i} className="relative">
+                <button
+                  onClick={() => setSelectedVideo(video)}
+                  className="aspect-video bg-gray-800 rounded-md overflow-hidden relative w-full hover:ring-2 hover:ring-purple-500 transition-all group"
+                >
+                  {video.youtubeId ? (
                     <Image
-                      src={video.thumbnailUrl}
+                      src={getYouTubeThumbnail(video.youtubeId)}
                       alt={video.title}
-                      layout="fill"
-                      objectFit="cover"
+                      fill
+                      className="object-cover"
+                      onError={(e) => {
+                        // Fallback to a different thumbnail quality or placeholder
+                        const target = e.target as HTMLImageElement;
+                        if (video.youtubeId && !target.src.includes('mqdefault')) {
+                          target.src = `https://img.youtube.com/vi/${video.youtubeId}/mqdefault.jpg`;
+                        } else if (video.youtubeId && !target.src.includes('default.jpg')) {
+                          target.src = `https://img.youtube.com/vi/${video.youtubeId}/default.jpg`;
+                        } else {
+                          // Final fallback to a placeholder
+                          target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIwIiBoZWlnaHQ9IjE4MCIgdmlld0JveD0iMCAwIDMyMCAxODAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIzMjAiIGhlaWdodD0iMTgwIiBmaWxsPSIjMzc0MTUxIi8+CjxwYXRoIGQ9Ik0xMzAgOTBMMTgwIDEyMFYxODBIMTMwVjkwWiIgZmlsbD0iI0VGNDQ0NCIvPgo8L3N2Zz4K';
+                        }
+                      }}
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <span className="text-2xl">🎵</span>
                     </div>
                   )}
-                </div>
-                <p className="text-xs mt-1 truncate">{video.title}</p>
-                <div className="flex items-center mt-1">
-                  {video.title.toLowerCase().includes("piano") && (
-                    <Image
-                      src="/piano.svg"
-                      alt="Piano"
-                      width={16}
-                      height={16}
-                    />
+                  {/* YouTube play button overlay */}
+                  {video.isYouTube && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/50 transition-colors">
+                      <div className="w-8 h-8 bg-red-600 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <svg className="w-4 h-4 text-white ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M8 5v14l11-7z"/>
+                        </svg>
+                      </div>
+                    </div>
                   )}
-                  {video.title.toLowerCase().includes("guitar") && (
-                    <Image
-                      src="/guitar.svg"
-                      alt="Guitar"
-                      width={16}
-                      height={16}
-                    />
+                </button>
+                <p className="text-xs mt-1 truncate">{video.title}</p>
+                
+                {/* Show genre and instrument tags with better separation */}
+                <div className="space-y-1 mt-2">
+                  {/* Genre tags */}
+                  {video.genres && video.genres.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      <div className="flex items-center gap-1">
+                        <span className="text-purple-400 text-xs font-medium">Genres:</span>
+                        {video.genres.slice(0, 2).map(genre => (
+                          <span key={genre} className="px-1 py-0.5 bg-purple-600/30 text-purple-300 text-xs rounded">
+                            {genre}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Instrument tags */}
+                  {video.instruments && video.instruments.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      <div className="flex items-center gap-1">
+                        <span className="text-blue-400 text-xs font-medium">Instruments:</span>
+                        {video.instruments.slice(0, 2).map(instrument => (
+                          <span key={instrument} className="px-1 py-0.5 bg-blue-600/30 text-blue-300 text-xs rounded">
+                            {instrument}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
@@ -422,6 +455,13 @@ export default function MusicianProfilePage({
           </div>
         </div>
       )}
+
+      {/* Video Player Modal */}
+      <VideoPlayer 
+        video={selectedVideo}
+        isOpen={!!selectedVideo}
+        onClose={() => setSelectedVideo(null)}
+      />
     </div>
   );
 }

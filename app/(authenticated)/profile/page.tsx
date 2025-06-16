@@ -5,10 +5,12 @@ import { useAuth } from "@/lib/context/auth-context-fix";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getDocumentById } from "@/lib/firebase/firestore";
+import { getDocumentById, queryDocuments } from "@/lib/firebase/firestore";
 import { IUser } from "@/lib/types";
 import { IVideo } from "@/lib/types";
 import ProfileRouteHandler from "./route-handler";
+import VideoPlayer from "@/components/VideoPlayer";
+import { getYouTubeThumbnail } from "@/lib/utils";
 
 // All available instruments with their SVG paths
 const allInstruments = [
@@ -23,22 +25,23 @@ export default function ProfilePage() {
   const { userProfile } = useAuth();
   const router = useRouter();
   const [videos, setVideos] = useState<IVideo[]>([]);
+  const [totalVideos, setTotalVideos] = useState(0);
   const [following, setFollowing] = useState<IUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedVideo, setSelectedVideo] = useState<IVideo | null>(null);
 
   useEffect(() => {
     const fetchProfileData = async () => {
       if (!userProfile) return;
 
       try {
-        // Fetch videos
-        if (userProfile.videos && userProfile.videos.length > 0) {
-          const videoPromises = userProfile.videos
-            .slice(0, 3)
-            .map((videoId) => getDocumentById("videos", videoId));
-          const videoResults = await Promise.all(videoPromises);
-          setVideos(videoResults.filter(Boolean) as IVideo[]);
-        }
+        // Fetch videos by userId (new method)
+        const userVideos = await queryDocuments("videos", [
+          { field: "userId", operator: "==", value: userProfile.id }
+        ]);
+        const allVideos = userVideos as IVideo[];
+        setTotalVideos(allVideos.length);
+        setVideos(allVideos.slice(0, 3));
 
         // Fetch following
         if (userProfile.following && userProfile.following.length > 0) {
@@ -198,7 +201,7 @@ export default function ProfilePage() {
         <div className="px-4 mb-4 bg-gray-800/30 p-5 rounded-2xl">
           <div className="flex justify-between items-center mb-4">
             <h2 className="font-bold text-lg">
-              My demos - {videos.length || 0}
+              My demos - {totalVideos || 0}
             </h2>
             <Link href="/videos" className="text-sm text-gray-400">
               View all
@@ -209,37 +212,75 @@ export default function ProfilePage() {
             {videos.length > 0 ? (
               videos.map((video, i) => (
                 <div key={i} className="relative">
-                  <div className="aspect-video bg-gray-800 rounded-md overflow-hidden">
-                    {video.thumbnailUrl ? (
+                  <button
+                    onClick={() => setSelectedVideo(video)}
+                    className="aspect-video bg-gray-800 rounded-md overflow-hidden relative w-full hover:ring-2 hover:ring-purple-500 transition-all group"
+                  >
+                    {video.youtubeId ? (
                       <Image
-                        src={video.thumbnailUrl}
+                        src={getYouTubeThumbnail(video.youtubeId)}
                         alt={video.title}
-                        layout="fill"
-                        objectFit="cover"
+                        fill
+                        className="object-cover"
+                        onError={(e) => {
+                          // Fallback to a different thumbnail quality or placeholder
+                          const target = e.target as HTMLImageElement;
+                          if (video.youtubeId && !target.src.includes('mqdefault')) {
+                            target.src = `https://img.youtube.com/vi/${video.youtubeId}/mqdefault.jpg`;
+                          } else if (video.youtubeId && !target.src.includes('default.jpg')) {
+                            target.src = `https://img.youtube.com/vi/${video.youtubeId}/default.jpg`;
+                          } else {
+                            // Final fallback to a placeholder
+                            target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIwIiBoZWlnaHQ9IjE4MCIgdmlld0JveD0iMCAwIDMyMCAxODAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIzMjAiIGhlaWdodD0iMTgwIiBmaWxsPSIjMzc0MTUxIi8+CjxwYXRoIGQ9Ik0xMzAgOTBMMTgwIDEyMFYxODBIMTMwVjkwWiIgZmlsbD0iI0VGNDQ0NCIvPgo8L3N2Zz4K';
+                          }
+                        }}
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
                         <span className="text-2xl">🎵</span>
                       </div>
                     )}
-                  </div>
-                  <p className="text-xs mt-1 truncate">{video.title}</p>
-                  <div className="flex items-center mt-1">
-                    {video.title.toLowerCase().includes("piano") && (
-                      <Image
-                        src="/piano.svg"
-                        alt="Piano"
-                        width={16}
-                        height={16}
-                      />
+                    {/* YouTube play button overlay */}
+                    {video.isYouTube && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/50 transition-colors">
+                        <div className="w-8 h-8 bg-red-600 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                          <svg className="w-4 h-4 text-white ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M8 5v14l11-7z"/>
+                          </svg>
+                        </div>
+                      </div>
                     )}
-                    {video.title.toLowerCase().includes("guitar") && (
-                      <Image
-                        src="/guitar.svg"
-                        alt="Guitar"
-                        width={16}
-                        height={16}
-                      />
+                  </button>
+                  <p className="text-xs mt-1 truncate">{video.title}</p>
+                  
+                  {/* Show genre and instrument tags with better separation */}
+                  <div className="space-y-1 mt-2">
+                    {/* Genre tags */}
+                    {video.genres && video.genres.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        <div className="flex items-center gap-1">
+                          <span className="text-purple-400 text-xs font-medium">Genres:</span>
+                          {video.genres.slice(0, 2).map(genre => (
+                            <span key={genre} className="px-1 py-0.5 bg-purple-600/30 text-purple-300 text-xs rounded">
+                              {genre}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Instrument tags */}
+                    {video.instruments && video.instruments.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        <div className="flex items-center gap-1">
+                          <span className="text-blue-400 text-xs font-medium">Instruments:</span>
+                          {video.instruments.slice(0, 2).map(instrument => (
+                            <span key={instrument} className="px-1 py-0.5 bg-blue-600/30 text-blue-300 text-xs rounded">
+                              {instrument}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -249,8 +290,14 @@ export default function ProfilePage() {
                 <div className="text-4xl mb-3">🎵</div>
                 <p className="text-gray-400">No demos posted yet.</p>
                 <p className="text-xs text-gray-500 mt-2">
-                  Record and share your music to showcase your talent
+                  Add YouTube videos to showcase your talent
                 </p>
+                <Link 
+                  href="/videos" 
+                  className="mt-3 text-xs bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded transition-colors"
+                >
+                  Add Videos
+                </Link>
               </div>
             )}
           </div>
@@ -311,6 +358,13 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Video Player Modal */}
+      <VideoPlayer 
+        video={selectedVideo}
+        isOpen={!!selectedVideo}
+        onClose={() => setSelectedVideo(null)}
+      />
     </>
   );
 }

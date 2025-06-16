@@ -1,6 +1,6 @@
 "use client";
 
-import { HomeIcon, UsersIcon, CalendarIcon, UserIcon } from "lucide-react";
+import { HomeIcon, UsersIcon, CalendarIcon, UserIcon, Bell } from "lucide-react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useState } from "react";
@@ -29,6 +29,7 @@ export function Navigation() {
     return [
       { href: "/", label: "HOME", icon: HomeIcon },
       { href: "/bands", label: "BANDS", icon: UsersIcon },
+      { href: "/notifications", label: "NOTIFICATIONS", icon: Bell },
       { href: "/gigs", label: "GIGS", icon: CalendarIcon },
       { href: profileHref, label: "PROFILE", icon: UserIcon },
     ];

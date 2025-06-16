@@ -54,6 +54,8 @@ export const registerUser = async (
       followers: [],
       following: [],
       videos: [],
+      bands: [], // Initialize empty bands array
+      bandInvitations: [], // Initialize empty band invitations array
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };

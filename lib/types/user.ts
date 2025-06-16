@@ -35,6 +35,8 @@ export interface IUser {
   followers: string[]; // Array of user IDs
   following: string[]; // Array of user IDs
   videos: string[]; // Array of video IDs
+  bands: string[]; // Array of band IDs user is member of
+  bandInvitations: string[]; // Array of pending invitation IDs
   createdAt: FieldValue;
   updatedAt: FieldValue;
 }
