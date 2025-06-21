@@ -18,8 +18,14 @@ import {
   IGig,
   IGigApplication,
   GigStatus,
-  ApplicationStatus,
+  GigType,
+  AgeRestriction,
+  GigApplicationStatus,
+  Genres,
 } from "@/lib/types";
+import { VenueType } from "@/lib/types/venue";
+import { createGigConversation } from "./messages";
+import { getDocumentById } from "./firestore";
 
 // Collection references
 const GIGS_COLLECTION = "gigs";
@@ -133,7 +139,7 @@ export const getGigs = async (
   }
 };
 
-// Get upcoming gigs (published and in the future)
+// Get upcoming gigs (published and in the future, excluding filled gigs)
 export const getUpcomingGigs = async (
   limitCount: number = 20
 ): Promise<IGig[]> => {
@@ -148,12 +154,12 @@ export const getUpcomingGigs = async (
         where("status", "==", GigStatus.PUBLISHED),
         where("date", ">=", today),
         orderBy("date", "asc"),
-        limit(limitCount)
+        limit(limitCount * 2) // Get more to filter out filled gigs
       );
 
       const querySnapshot = await getDocs(q);
 
-      return querySnapshot.docs.map((doc) => ({
+      const allGigs = querySnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
         date:
@@ -161,6 +167,20 @@ export const getUpcomingGigs = async (
             ? doc.data().date.toDate()
             : doc.data().date,
       })) as IGig[];
+
+      // Filter out gigs that have accepted applications
+      const availableGigs = [];
+      for (const gig of allGigs) {
+        const hasAccepted = await gigHasAcceptedApplications(gig.id);
+        if (!hasAccepted) {
+          availableGigs.push(gig);
+        }
+        if (availableGigs.length >= limitCount) {
+          break;
+        }
+      }
+
+      return availableGigs;
     } catch (indexError) {
       console.warn(
         "Index not ready, falling back to simple query:",
@@ -171,7 +191,7 @@ export const getUpcomingGigs = async (
       const q = query(
         collection(db, GIGS_COLLECTION),
         where("status", "==", GigStatus.PUBLISHED),
-        limit(limitCount * 2) // Get more to ensure we have enough after filtering
+        limit(limitCount * 3) // Get more to ensure we have enough after filtering
       );
 
       const querySnapshot = await getDocs(q);
@@ -184,11 +204,21 @@ export const getUpcomingGigs = async (
             : doc.data().date,
       })) as IGig[];
 
-      // Filter and sort in memory
-      return allGigs
-        .filter((gig) => gig.date >= today)
-        .sort((a, b) => a.date.getTime() - b.date.getTime())
-        .slice(0, limitCount);
+      // Filter by date and availability
+      const futureGigs = allGigs.filter((gig) => gig.date >= today);
+      const availableGigs = [];
+      
+      for (const gig of futureGigs) {
+        const hasAccepted = await gigHasAcceptedApplications(gig.id);
+        if (!hasAccepted) {
+          availableGigs.push(gig);
+        }
+        if (availableGigs.length >= limitCount) {
+          break;
+        }
+      }
+
+      return availableGigs.sort((a, b) => a.date.getTime() - b.date.getTime());
     }
   } catch (error) {
     console.error("Error getting upcoming gigs:", error);
@@ -258,11 +288,42 @@ export const updateGigApplication = async (
     const updateData = { ...updates };
 
     // Add respondedAt timestamp if status is being updated
-    if (updates.status && updates.status !== ApplicationStatus.PENDING) {
+    if (updates.status && updates.status !== GigApplicationStatus.PENDING) {
       (updateData as any).respondedAt = serverTimestamp();
     }
 
     await updateDoc(docRef, updateData);
+
+    // Create conversation when application is accepted
+    if (updates.status === GigApplicationStatus.ACCEPTED) {
+      // Get the application data to create conversation
+      const applicationDoc = await getDoc(docRef);
+      if (applicationDoc.exists()) {
+        const applicationData = applicationDoc.data() as IGigApplication;
+        
+        // Get gig data
+        const gigData = await getGig(applicationData.gigId);
+        if (gigData) {
+          // Get venue manager data
+          const venueManagerData = await getDocumentById("users", gigData.createdBy);
+          
+          if (venueManagerData && 'profile' in venueManagerData) {
+            const venueManager = venueManagerData as any;
+            await createGigConversation({
+              gigId: gigData.id,
+              gigTitle: gigData.title,
+              venueManagerId: gigData.createdBy,
+              venueManagerName: venueManager.profile.firstName && venueManager.profile.lastName 
+                ? `${venueManager.profile.firstName} ${venueManager.profile.lastName}`
+                : venueManager.profile.username,
+              artistId: applicationData.applicantId,
+              artistName: applicationData.applicantName,
+              artistType: applicationData.applicantType,
+            });
+          }
+        }
+      }
+    }
   } catch (error) {
     console.error("Error updating gig application:", error);
     throw error;
@@ -288,6 +349,324 @@ export const getUserGigApplications = async (
     })) as IGigApplication[];
   } catch (error) {
     console.error("Error getting user gig applications:", error);
+    throw error;
+  }
+};
+
+// Get accepted gigs for a musician or band
+export const getAcceptedGigs = async (
+  applicantId: string
+): Promise<IGig[]> => {
+  try {
+    // First, get all accepted applications for this applicant
+    const q = query(
+      collection(db, GIG_APPLICATIONS_COLLECTION),
+      where("applicantId", "==", applicantId),
+      where("status", "==", GigApplicationStatus.ACCEPTED),
+      orderBy("appliedAt", "desc")
+    );
+
+    const querySnapshot = await getDocs(q);
+    const acceptedApplications = querySnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as IGigApplication[];
+
+    // Get the gig details for each accepted application
+    const gigPromises = acceptedApplications.map(async (application) => {
+      const gigData = await getGig(application.gigId);
+      return gigData;
+    });
+
+    const gigs = await Promise.all(gigPromises);
+    
+    // Filter out null values and sort by date
+    return gigs
+      .filter((gig): gig is IGig => gig !== null)
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+  } catch (error) {
+    console.error("Error getting accepted gigs:", error);
+    throw error;
+  }
+};
+
+// Check if a gig has any accepted applications
+export const gigHasAcceptedApplications = async (gigId: string): Promise<boolean> => {
+  try {
+    const q = query(
+      collection(db, GIG_APPLICATIONS_COLLECTION),
+      where("gigId", "==", gigId),
+      where("status", "==", GigApplicationStatus.ACCEPTED),
+      limit(1)
+    );
+
+    const querySnapshot = await getDocs(q);
+    return !querySnapshot.empty;
+  } catch (error) {
+    console.error("Error checking gig accepted applications:", error);
+    return false;
+  }
+};
+
+// Enhanced gig search with advanced filtering
+export interface GigSearchFilters {
+  // Basic filters
+  status?: GigStatus;
+  venueId?: string;
+  createdBy?: string;
+  
+  // Date filters
+  dateFrom?: Date;
+  dateTo?: Date;
+  
+  // Location filters
+  location?: string;
+  radius?: number; // in kilometers
+  coordinates?: {
+    latitude: number;
+    longitude: number;
+  };
+  
+  // Genre and type filters
+  genres?: Genres[];
+  gigType?: GigType;
+  
+  // Payment filters
+  paymentMin?: number;
+  paymentMax?: number;
+  paymentCurrency?: string;
+  paidGigsOnly?: boolean;
+  
+  // Venue filters
+  venueType?: VenueType;
+  capacity?: {
+    min?: number;
+    max?: number;
+  };
+  amenities?: string[];
+  
+  // Application filters
+  hasOpenApplications?: boolean;
+  applicationDeadlineAfter?: Date;
+  maxApplicants?: number;
+  
+  // Technical requirements
+  requiresSoundSystem?: boolean;
+  requiresLighting?: boolean;
+  backlineRequired?: string[];
+  
+  // Audience filters
+  ageRestriction?: AgeRestriction;
+  expectedAttendanceMin?: number;
+  expectedAttendanceMax?: number;
+  
+  // Sorting
+  sortBy?: 'date' | 'created' | 'payment' | 'distance' | 'popularity';
+  sortOrder?: 'asc' | 'desc';
+  
+  // Pagination
+  limit?: number;
+  offset?: number;
+}
+
+// Advanced gig search function
+export const searchGigs = async (filters: GigSearchFilters): Promise<{
+  gigs: IGig[];
+  total: number;
+  hasMore: boolean;
+}> => {
+  try {
+    const constraints = [];
+    
+    // Basic status filter (always include published gigs in search)
+    if (filters.status) {
+      constraints.push(where("status", "==", filters.status));
+    } else {
+      constraints.push(where("status", "==", GigStatus.PUBLISHED));
+    }
+    
+    // Venue filter
+    if (filters.venueId) {
+      constraints.push(where("venueId", "==", filters.venueId));
+    }
+    
+    // Creator filter
+    if (filters.createdBy) {
+      constraints.push(where("createdBy", "==", filters.createdBy));
+    }
+    
+    // Date range filters
+    if (filters.dateFrom) {
+      constraints.push(where("date", ">=", filters.dateFrom));
+    }
+    if (filters.dateTo) {
+      constraints.push(where("date", "<=", filters.dateTo));
+    }
+    
+    // Genre filter (array-contains-any for multiple genres)
+    if (filters.genres && filters.genres.length > 0) {
+      if (filters.genres.length === 1) {
+        constraints.push(where("genres", "array-contains", filters.genres[0]));
+      } else {
+        constraints.push(where("genres", "array-contains-any", filters.genres));
+      }
+    }
+    
+    // Gig type filter
+    if (filters.gigType) {
+      constraints.push(where("gigType", "==", filters.gigType));
+    }
+    
+    // Payment filters
+    if (filters.paymentMin !== undefined) {
+      constraints.push(where("paymentAmount", ">=", filters.paymentMin));
+    }
+    if (filters.paymentMax !== undefined) {
+      constraints.push(where("paymentAmount", "<=", filters.paymentMax));
+    }
+    if (filters.paidGigsOnly) {
+      constraints.push(where("paymentAmount", ">", 0));
+    }
+    
+    // Application deadline filter
+    if (filters.applicationDeadlineAfter) {
+      constraints.push(where("applicationDeadline", ">=", filters.applicationDeadlineAfter));
+    }
+    
+    // Age restriction filter
+    if (filters.ageRestriction) {
+      constraints.push(where("ageRestriction", "==", filters.ageRestriction));
+    }
+    
+    // Sorting
+    const sortField = filters.sortBy || "date";
+    const sortDirection = filters.sortOrder || "asc";
+    constraints.push(orderBy(sortField, sortDirection));
+    
+    // Pagination
+    const limitCount = filters.limit || 20;
+    constraints.push(limit(limitCount + 1)); // Get one extra to check if there are more
+    
+    if (filters.offset) {
+      // For pagination, we'd need to implement cursor-based pagination
+      // This is a simplified version
+    }
+    
+    const querySnapshot = await getDocs(
+      query(collection(db, GIGS_COLLECTION), ...constraints)
+    );
+    
+    const allGigs = querySnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+      date: doc.data().date instanceof Timestamp ? doc.data().date.toDate() : doc.data().date,
+    })) as IGig[];
+    
+    // Check if there are more results
+    const hasMore = allGigs.length > limitCount;
+    const gigs = hasMore ? allGigs.slice(0, limitCount) : allGigs;
+    
+    // Apply client-side filters that can't be done in Firestore
+    let filteredGigs = gigs;
+    
+    // Location-based filtering (requires client-side calculation)
+    if (filters.coordinates && filters.radius) {
+      filteredGigs = filteredGigs.filter(gig => {
+        if (!gig.coordinates) return false;
+        const distance = calculateDistance(
+          filters.coordinates!.latitude,
+          filters.coordinates!.longitude,
+          gig.coordinates.latitude,
+          gig.coordinates.longitude
+        );
+        return distance <= filters.radius!;
+      });
+    }
+    
+    // Expected attendance filters
+    if (filters.expectedAttendanceMin !== undefined) {
+      filteredGigs = filteredGigs.filter(gig => 
+        gig.expectedAttendance && gig.expectedAttendance >= filters.expectedAttendanceMin!
+      );
+    }
+    if (filters.expectedAttendanceMax !== undefined) {
+      filteredGigs = filteredGigs.filter(gig => 
+        gig.expectedAttendance && gig.expectedAttendance <= filters.expectedAttendanceMax!
+      );
+    }
+    
+    // Open applications filter
+    if (filters.hasOpenApplications) {
+      const now = new Date();
+      filteredGigs = filteredGigs.filter(gig => {
+        // Check if application deadline hasn't passed
+        if (gig.applicationDeadline && gig.applicationDeadline < now) {
+          return false;
+        }
+        // Check if max applicants reached
+        if (gig.maxApplicants && gig.applications.length >= gig.maxApplicants) {
+          return false;
+        }
+        return true;
+      });
+    }
+    
+    return {
+      gigs: filteredGigs,
+      total: filteredGigs.length,
+      hasMore: hasMore && filteredGigs.length === limitCount
+    };
+    
+  } catch (error) {
+    console.error("Error searching gigs:", error);
+    throw error;
+  }
+};
+
+// Helper function to calculate distance between two coordinates
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Radius of the Earth in kilometers
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const distance = R * c; // Distance in kilometers
+  return distance;
+}
+
+// Get gigs near a location
+export const getGigsNearLocation = async (
+  latitude: number,
+  longitude: number,
+  radiusKm: number = 50,
+  limit: number = 20
+): Promise<IGig[]> => {
+  return searchGigs({
+    coordinates: { latitude, longitude },
+    radius: radiusKm,
+    limit,
+    hasOpenApplications: true,
+    sortBy: 'distance'
+  }).then(result => result.gigs);
+};
+
+// Get popular gigs (by application count)
+export const getPopularGigs = async (limit: number = 10): Promise<IGig[]> => {
+  try {
+    const gigs = await getGigs({ 
+      status: GigStatus.PUBLISHED, 
+      limit: limit * 2 // Get more to sort by popularity
+    });
+    
+    // Sort by application count (popularity)
+    return gigs
+      .sort((a, b) => b.applications.length - a.applications.length)
+      .slice(0, limit);
+  } catch (error) {
+    console.error("Error getting popular gigs:", error);
     throw error;
   }
 };

@@ -24,9 +24,9 @@ import {
   BandMemberRole, 
   BandPermission,
   InvitationStatus,
-  ApplicationStatus,
   IUser 
 } from "@/lib/types";
+import { ApplicationStatus } from "@/lib/types/band";
 import { getDocumentById, updateDocument, addDocument, queryDocuments } from "./firestore";
 
 const BANDS_COLLECTION = "bands";
@@ -576,5 +576,146 @@ export const declineBandApplication = async (
   } catch (error) {
     console.error("Error declining band application:", error);
     throw error;
+  }
+};
+
+// ===== BAND FOLLOW FUNCTIONS =====
+
+// Follow a band
+export const followBand = async (userId: string, bandId: string): Promise<void> => {
+  try {
+    // Check if band exists
+    const band = await getBandById(bandId);
+    if (!band) {
+      throw new Error("Band not found");
+    }
+
+    // Check if user exists
+    const user = await getDocumentById<IUser>("users", userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Check if already following
+    if (band.followers.includes(userId)) {
+      throw new Error("Already following this band");
+    }
+
+    // Update both band and user atomically
+    await Promise.all([
+      // Add user to band's followers
+      updateDocument(BANDS_COLLECTION, bandId, {
+        followers: arrayUnion(userId)
+      }),
+      // Add band to user's following (bands they follow)
+      updateDocument("users", userId, {
+        following: arrayUnion(bandId)
+      })
+    ]);
+
+    console.log(`User ${userId} now follows band ${bandId}`);
+  } catch (error) {
+    console.error("Error following band:", error);
+    throw error;
+  }
+};
+
+// Unfollow a band
+export const unfollowBand = async (userId: string, bandId: string): Promise<void> => {
+  try {
+    // Update both band and user atomically
+    await Promise.all([
+      // Remove user from band's followers
+      updateDocument(BANDS_COLLECTION, bandId, {
+        followers: arrayRemove(userId)
+      }),
+      // Remove band from user's following
+      updateDocument("users", userId, {
+        following: arrayRemove(bandId)
+      })
+    ]);
+
+    console.log(`User ${userId} unfollowed band ${bandId}`);
+  } catch (error) {
+    console.error("Error unfollowing band:", error);
+    throw error;
+  }
+};
+
+// Check if user is following a band
+export const isFollowingBand = async (userId: string, bandId: string): Promise<boolean> => {
+  try {
+    const band = await getBandById(bandId);
+    return band ? band.followers.includes(userId) : false;
+  } catch (error) {
+    console.error("Error checking band follow status:", error);
+    return false;
+  }
+};
+
+// Get band followers (users who follow this band)
+export const getBandFollowers = async (bandId: string): Promise<IUser[]> => {
+  try {
+    const band = await getBandById(bandId);
+    if (!band || band.followers.length === 0) {
+      return [];
+    }
+
+    // Get all follower users
+    const followerPromises = band.followers.map(userId => 
+      getDocumentById<IUser>("users", userId)
+    );
+    const followers = await Promise.all(followerPromises);
+    
+    // Filter out null results
+    return followers.filter((user): user is IUser => user !== null);
+  } catch (error) {
+    console.error("Error getting band followers:", error);
+    throw error;
+  }
+};
+
+// Get bands that a user follows
+export const getUserFollowedBands = async (userId: string): Promise<IBand[]> => {
+  try {
+    const user = await getDocumentById<IUser>("users", userId);
+    if (!user || user.following.length === 0) {
+      return [];
+    }
+
+    // Filter following list to only include band IDs (not user IDs)
+    // We can distinguish by checking if the ID corresponds to a band
+    const bandPromises = user.following.map(async (id) => {
+      try {
+        return await getBandById(id);
+      } catch {
+        return null; // This ID might be a user ID, not a band ID
+      }
+    });
+    
+    const bands = await Promise.all(bandPromises);
+    return bands.filter((band): band is IBand => band !== null);
+  } catch (error) {
+    console.error("Error getting user followed bands:", error);
+    throw error;
+  }
+};
+
+// Get follow statistics for a band
+export const getBandFollowStats = async (bandId: string): Promise<{
+  followersCount: number;
+}> => {
+  try {
+    const band = await getBandById(bandId);
+    if (!band) {
+      return { followersCount: 0 };
+    }
+
+    return {
+      followersCount: band.followers.length
+    };
+  } catch (error) {
+    console.error("Error getting band follow stats:", error);
+    return { followersCount: 0 };
   }
 };

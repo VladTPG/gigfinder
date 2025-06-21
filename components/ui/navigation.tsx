@@ -1,11 +1,12 @@
 "use client";
 
-import { HomeIcon, UsersIcon, CalendarIcon, UserIcon, Bell } from "lucide-react";
+import { HomeIcon, UsersIcon, CalendarIcon, UserIcon, Bell, MessageCircle } from "lucide-react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/context/auth-context-fix";
 import { UserRole } from "@/lib/types";
+import { subscribeToTotalUnreadCount } from "@/lib/firebase/messages";
 
 import {
   Sidebar,
@@ -20,7 +21,22 @@ export function Navigation() {
   const pathname = usePathname();
   const isMobile = useIsMobile();
   const [hovered, setHovered] = useState<string | null>(null);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const { userProfile } = useAuth();
+
+  // Subscribe to unread message count
+  useEffect(() => {
+    if (!userProfile) return;
+
+    const userType = userProfile.role === "manager" ? "venue_manager" : "artist";
+    const unsubscribe = subscribeToTotalUnreadCount(
+      userProfile.id,
+      userType,
+      setUnreadMessageCount
+    );
+
+    return () => unsubscribe();
+  }, [userProfile]);
 
   // Dynamic navigation items based on user role
   const getNavItems = () => {
@@ -31,6 +47,7 @@ export function Navigation() {
       { href: "/bands", label: "BANDS", icon: UsersIcon },
       { href: "/notifications", label: "NOTIFICATIONS", icon: Bell },
       { href: "/gigs", label: "GIGS", icon: CalendarIcon },
+      { href: "/messages", label: "MESSAGES", icon: MessageCircle, badge: unreadMessageCount },
       { href: profileHref, label: "PROFILE", icon: UserIcon },
     ];
   };
@@ -41,20 +58,27 @@ export function Navigation() {
     return (
       <div className="fixed bottom-0 left-0 right-0 w-full bg-sidebar rounded-t-xl shadow-lg border-t border-border/30">
         <nav className="flex h-16">
-          {navItems.map(({ href, label, icon: Icon }) => {
+          {navItems.map(({ href, label, icon: Icon, badge }) => {
             const isActive = pathname === href;
             return (
               <Link
                 key={href}
                 href={href}
                 className={cn(
-                  "flex flex-col items-center justify-center w-full py-2 transition-all duration-300",
+                  "flex flex-col items-center justify-center w-full py-2 transition-all duration-300 relative",
                   isActive
                     ? "text-[color:var(--accent)] [text-shadow:_0_0_5px_var(--accent)] [&>svg]:drop-shadow-[0_0_5px_var(--accent)]"
                     : "text-muted-foreground hover:text-[color:var(--accent)] hover:[text-shadow:_0_0_5px_var(--accent)] hover:[&>svg]:drop-shadow-[0_0_5px_var(--accent)]"
                 )}
               >
-                <Icon size={20} />
+                <div className="relative">
+                  <Icon size={20} />
+                  {badge && badge > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                      {badge > 99 ? '99+' : badge}
+                    </span>
+                  )}
+                </div>
                 <span className="text-xs mt-1 tracking-widest">{label}</span>
               </Link>
             );
@@ -69,7 +93,7 @@ export function Navigation() {
       <img src="/logo.png" className="mb-14 mt-5 w-fit" alt="logo" />
 
       <SidebarMenu className="space-y-2">
-        {navItems.map(({ href, label, icon: Icon }, index) => {
+        {navItems.map(({ href, label, icon: Icon, badge }, index) => {
           const isActive = pathname === href;
           const isHovered = hovered === href;
 
@@ -90,13 +114,18 @@ export function Navigation() {
                 <Link href={href} className="flex items-center gap-4 w-full">
                   <div
                     className={cn(
-                      "transition-all duration-300",
+                      "transition-all duration-300 relative",
                       isActive || isHovered
                         ? "text-accent [filter:drop-shadow(0_0_3px_var(--accent))]"
                         : ""
                     )}
                   >
                     <Icon size={25} />
+                    {badge && badge > 0 && (
+                      <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                        {badge > 99 ? '99+' : badge}
+                      </span>
+                    )}
                   </div>
                   <span
                     className={cn(

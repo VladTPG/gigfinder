@@ -1,5 +1,6 @@
-import { queryDocuments, getDocumentById } from "./firestore";
+import { queryDocuments, getDocumentById, updateDocument } from "./firestore";
 import { IUser } from "@/lib/types";
+import { arrayUnion, arrayRemove } from "firebase/firestore";
 
 const USERS_COLLECTION = "users";
 
@@ -60,5 +61,135 @@ export const getUsersByIds = async (userIds: string[]): Promise<IUser[]> => {
   } catch (error) {
     console.error("Error getting users by IDs:", error);
     throw error;
+  }
+};
+
+// Follow a user
+export const followUser = async (followerId: string, targetUserId: string): Promise<void> => {
+  try {
+    if (followerId === targetUserId) {
+      throw new Error("Cannot follow yourself");
+    }
+
+    // Check if already following
+    const follower = await getUserById(followerId);
+    if (!follower) {
+      throw new Error("Follower user not found");
+    }
+
+    if (follower.following.includes(targetUserId)) {
+      throw new Error("Already following this user");
+    }
+
+    // Check if target user exists
+    const targetUser = await getUserById(targetUserId);
+    if (!targetUser) {
+      throw new Error("Target user not found");
+    }
+
+    // Update both users atomically
+    await Promise.all([
+      // Add to follower's following list
+      updateDocument(USERS_COLLECTION, followerId, {
+        following: arrayUnion(targetUserId)
+      }),
+      // Add to target's followers list
+      updateDocument(USERS_COLLECTION, targetUserId, {
+        followers: arrayUnion(followerId)
+      })
+    ]);
+
+    console.log(`User ${followerId} now follows ${targetUserId}`);
+  } catch (error) {
+    console.error("Error following user:", error);
+    throw error;
+  }
+};
+
+// Unfollow a user
+export const unfollowUser = async (followerId: string, targetUserId: string): Promise<void> => {
+  try {
+    if (followerId === targetUserId) {
+      throw new Error("Cannot unfollow yourself");
+    }
+
+    // Update both users atomically
+    await Promise.all([
+      // Remove from follower's following list
+      updateDocument(USERS_COLLECTION, followerId, {
+        following: arrayRemove(targetUserId)
+      }),
+      // Remove from target's followers list
+      updateDocument(USERS_COLLECTION, targetUserId, {
+        followers: arrayRemove(followerId)
+      })
+    ]);
+
+    console.log(`User ${followerId} unfollowed ${targetUserId}`);
+  } catch (error) {
+    console.error("Error unfollowing user:", error);
+    throw error;
+  }
+};
+
+// Check if user is following another user
+export const isFollowingUser = async (followerId: string, targetUserId: string): Promise<boolean> => {
+  try {
+    const follower = await getUserById(followerId);
+    return follower ? follower.following.includes(targetUserId) : false;
+  } catch (error) {
+    console.error("Error checking follow status:", error);
+    return false;
+  }
+};
+
+// Get user's followers
+export const getUserFollowers = async (userId: string): Promise<IUser[]> => {
+  try {
+    const user = await getUserById(userId);
+    if (!user || user.followers.length === 0) {
+      return [];
+    }
+
+    return await getUsersByIds(user.followers);
+  } catch (error) {
+    console.error("Error getting user followers:", error);
+    throw error;
+  }
+};
+
+// Get users that a user is following
+export const getUserFollowing = async (userId: string): Promise<IUser[]> => {
+  try {
+    const user = await getUserById(userId);
+    if (!user || user.following.length === 0) {
+      return [];
+    }
+
+    return await getUsersByIds(user.following);
+  } catch (error) {
+    console.error("Error getting user following:", error);
+    throw error;
+  }
+};
+
+// Get follow statistics for a user
+export const getUserFollowStats = async (userId: string): Promise<{
+  followersCount: number;
+  followingCount: number;
+}> => {
+  try {
+    const user = await getUserById(userId);
+    if (!user) {
+      return { followersCount: 0, followingCount: 0 };
+    }
+
+    return {
+      followersCount: user.followers.length,
+      followingCount: user.following.length
+    };
+  } catch (error) {
+    console.error("Error getting follow stats:", error);
+    return { followersCount: 0, followingCount: 0 };
   }
 }; 

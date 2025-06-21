@@ -1,336 +1,200 @@
 "use client";
 
-import { useState, useEffect, KeyboardEvent } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/context/auth-context-fix";
+import { searchUsers } from "@/lib/firebase/users";
+import { searchBands } from "@/lib/firebase/bands";
+import { IUser, IBand } from "@/lib/types";
 import { Input } from "@/components/ui/input";
-import { db } from "@/lib/firebase/config";
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  limit,
-  orderBy,
-} from "firebase/firestore";
-import { SearchIcon, MusicIcon, UsersIcon, HomeIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { FollowButton } from "@/components/ui/follow-button";
+import { Search, Music, Users, MapPin, Clock, Loader2 } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import { cn } from "@/lib/utils";
 
-interface SearchResult {
-  id: string;
-  name: string;
-  type: "musician" | "band" | "venue";
-  description?: string;
-  imageUrl?: string;
-  location?: string;
-  genres?: string[];
-  instruments?: string[]; // For musicians
-  members?: number; // For bands
-  capacity?: number; // For venues
+type SearchType = "musicians" | "bands";
+
+interface SearchState {
+  musicians: IUser[];
+  bands: IBand[];
+  loading: boolean;
+  error: string | null;
 }
 
 export default function SearchPage() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [searchType, setSearchType] = useState<"musician" | "band" | "venue">(
-    "musician"
-  );
   const router = useRouter();
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [debug, setDebug] = useState<string[]>([]); // For debugging
+  const { userProfile } = useAuth();
+  const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState<SearchType>("musicians");
+  const [searchState, setSearchState] = useState<SearchState>({
+    musicians: [],
+    bands: [],
+    loading: false,
+    error: null
+  });
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("");
 
-  // Load recent searches from localStorage on component mount
+  // Load recent searches from localStorage
   useEffect(() => {
-    const savedSearches = localStorage.getItem("recentSearches");
-    if (savedSearches) {
+    const saved = localStorage.getItem("recentSearches");
+    if (saved) {
       try {
-        setRecentSearches(JSON.parse(savedSearches).slice(0, 5));
+        setRecentSearches(JSON.parse(saved).slice(0, 5));
       } catch (e) {
-        console.error("Failed to parse recent searches", e);
+        console.error("Failed to parse recent searches:", e);
       }
     }
   }, []);
 
-  // Debounce search term changes
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-    }, 300); // 300ms debounce time
-
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
-
-  // Trigger search when debounced search term changes
-  useEffect(() => {
-    if (debouncedSearchTerm) {
-      performSearch(debouncedSearchTerm);
-    } else {
-      // Clear results when search is empty
-      setSearchResults([]);
-    }
-  }, [debouncedSearchTerm, searchType]);
-
-  // Save a new search term to recent searches
-  const saveRecentSearch = (term: string) => {
+  // Save search term to recent searches
+  const saveRecentSearch = useCallback((term: string) => {
     if (!term.trim()) return;
-
-    // Normalize the search term to prevent duplicates with different casing
+    
     const normalizedTerm = term.trim();
-
-    // Create a new array with the current term at the beginning and filter out duplicates
-    const updatedSearches = [
+    const updated = [
       normalizedTerm,
-      ...recentSearches.filter(
-        (s) => s.toLowerCase() !== normalizedTerm.toLowerCase()
-      ),
+      ...recentSearches.filter(s => s.toLowerCase() !== normalizedTerm.toLowerCase())
     ].slice(0, 5);
+    
+    setRecentSearches(updated);
+    localStorage.setItem("recentSearches", JSON.stringify(updated));
+  }, [recentSearches]);
 
-    setRecentSearches(updatedSearches);
-
-    try {
-      localStorage.setItem("recentSearches", JSON.stringify(updatedSearches));
-    } catch (e) {
-      console.error("Failed to save recent searches to localStorage", e);
-    }
-  };
-
-  const addDebug = (message: string) => {
-    setDebug((prev) => [...prev, message]);
-    console.log(message);
-  };
-
-  // Handle keyboard shortcut
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      // Save the search term to recent searches on Enter
-      if (searchTerm.trim()) {
-        saveRecentSearch(searchTerm);
-      }
-    }
-  };
-
-  const performSearch = async (term: string) => {
+  // Debounced search function
+  const performSearch = useCallback(async (term: string) => {
     if (!term.trim()) {
+      setSearchState(prev => ({ ...prev, musicians: [], bands: [] }));
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
-    setDebug([`Searching for ${searchType}: ${term}`]);
+    setSearchState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      // Map the user-friendly search type to the correct collection name
-      let collectionName;
-      let nameField;
+      const [musicians, bands] = await Promise.all([
+        searchUsers(term, 20),
+        searchBands(term, [], 20)
+      ]);
 
-      // Determine the correct collection and field to search based on the type
-      switch (searchType) {
-        case "musician":
-          // For musicians, we look in the "users" collection where role is "musician"
-          collectionName = "users";
-          nameField = "profile.username"; // Based on IUser interface
-          break;
-        case "band":
-          // For bands, we look in a dedicated "bands" collection
-          collectionName = "bands";
-          nameField = "name"; // Assuming the field is "name" in bands collection
-          break;
-        case "venue":
-          // For venues, we look in a dedicated "venues" collection
-          collectionName = "venues";
-          nameField = "name"; // Assuming the field is "name" in venues collection
-          break;
-      }
+      // Filter musicians to only include those with musician role
+      const filteredMusicians = musicians.filter(user => user.role === "musician");
 
-      const sanitizedSearchTerm = term.trim().toLowerCase(); // Normalize for case-insensitive search
-      addDebug(
-        `Using collection: ${collectionName}, searching field: ${nameField}`
-      );
-
-      // Different search approach based on type
-      if (searchType === "musician") {
-        // For musicians, use an indexed query for better performance
-        // This assumes you have created an index on the role field and profile.username fields
-        addDebug("Using indexed query for musicians");
-
-        // Query by first characters (prefix search) for musicians using composite index
-        // Requires a composite index on fields role (ascending) and profile.username (ascending)
-        const musicianQuery = query(
-          collection(db, collectionName),
-          where("role", "==", "musician"),
-          orderBy("profile.username"),
-          // The startAt and endAt approach works well with Firebase indexes
-          where("profile.username", ">=", sanitizedSearchTerm),
-          where("profile.username", "<=", sanitizedSearchTerm + "\uf8ff"),
-          limit(20)
-        );
-
-        const querySnapshot = await getDocs(musicianQuery);
-        addDebug(`Query returned ${querySnapshot.size} musicians`);
-
-        // Process results
-        const results: SearchResult[] = [];
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
-          const username = data.profile?.username || "";
-
-          results.push({
-            id: doc.id,
-            name: username,
-            type: searchType,
-            description: data.profile?.bio || "",
-            imageUrl: data.profile?.profilePicture || "",
-            location: data.profile?.location || "",
-            genres: data.profile?.genres || [],
-            instruments: data.profile?.instruments || [],
-          });
-        });
-
-        addDebug(`Found ${results.length} matching musicians`);
-        setSearchResults(results);
-      } else {
-        // For bands and venues, use indexed queries
-        // This assumes you have created an index on the name field
-        const q = query(
-          collection(db, collectionName),
-          orderBy(nameField),
-          where(nameField, ">=", sanitizedSearchTerm),
-          where(nameField, "<=", sanitizedSearchTerm + "\uf8ff"),
-          limit(20)
-        );
-
-        addDebug(`Executing ${searchType} search query`);
-        const querySnapshot = await getDocs(q);
-        addDebug(`Query returned ${querySnapshot.size} results`);
-
-        // Process regular query results
-        const results: SearchResult[] = [];
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
-          const name = data.name || `Unknown ${searchType}`;
-
-          // Build result with type-specific fields
-          const result: SearchResult = {
-            id: doc.id,
-            name: name,
-            type: searchType,
-            description: data.description || "",
-            imageUrl: data.imageUrl || "",
-            location: data.location || "",
-            genres: data.genres || [],
-          };
-
-          // Add type-specific properties
-          if (searchType === "band") {
-            result.members = data.members?.length || 0;
-          } else if (searchType === "venue") {
-            result.capacity = data.capacity || 0;
-          }
-
-          results.push(result);
-        });
-
-        setSearchResults(results);
-      }
-    } catch (err: Error | unknown) {
-      console.error("Error fetching search results:", err);
-      addDebug(
-        `Error: ${err instanceof Error ? err.message : "Unknown error"}`
-      );
-      setError(
-        `Failed to fetch results: ${
-          err instanceof Error ? err.message : "Unknown error"
-        }`
-      );
+      setSearchState({
+        musicians: filteredMusicians,
+        bands,
+        loading: false,
+        error: null
+      });
+    } catch (error) {
+      console.error("Search error:", error);
+      setSearchState(prev => ({
+        ...prev,
+        loading: false,
+        error: "Failed to search. Please try again."
+      }));
     }
+  }, []);
 
-    setIsLoading(false);
-  };
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      performSearch(searchTerm);
+    }, 300);
 
-  const getAvatarPlaceholder = (name: string, type: string) => {
-    // Format the first letter of the name and generate a URL for a placeholder avatar
-    const initial = name.charAt(0).toUpperCase();
-    const colors = {
-      musician: "6D28D9", // Purple
-      band: "DB2777", // Pink
-      venue: "0369A1", // Blue
-    };
-    const color = colors[type as keyof typeof colors] || "6D28D9";
-    return `https://ui-avatars.com/api/?name=${encodeURIComponent(
-      initial
-    )}&background=${color}&color=fff`;
-  };
+    return () => clearTimeout(timer);
+  }, [searchTerm, performSearch]);
 
-  const getTypeIcon = (type: "musician" | "band" | "venue") => {
-    switch (type) {
-      case "musician":
-        return <MusicIcon className="h-4 w-4" />;
-      case "band":
-        return <UsersIcon className="h-4 w-4" />;
-      case "venue":
-        return <HomeIcon className="h-4 w-4" />;
-      default:
-        return null;
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchTerm.trim()) {
+      saveRecentSearch(searchTerm);
+      performSearch(searchTerm);
     }
   };
+
+  const handleRecentSearchClick = (term: string) => {
+    setSearchTerm(term);
+    performSearch(term);
+  };
+
+  const getDisplayName = (user: IUser) => {
+    const { firstName, lastName, username } = user.profile;
+    if (firstName && lastName) {
+      return `${firstName} ${lastName}`;
+    }
+    return username;
+  };
+
+  const currentResults = activeTab === "musicians" ? searchState.musicians : searchState.bands;
+  const hasResults = currentResults.length > 0;
+  const showEmptyState = !searchState.loading && searchTerm && !hasResults;
 
   return (
-    <div className="container mx-auto p-4 max-w-3xl">
-      <div className="bg-gray-800/30 rounded-2xl p-6 mb-6">
-        <h1 className="text-3xl font-bold mb-6 text-center bg-gradient-to-r from-purple-400 to-pink-600 text-transparent bg-clip-text">
-          Discover Your Music Community
+    <div className="min-h-screen text-white p-3 md:p-4 max-w-7xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="bg-gray-800/30 rounded-2xl p-6">
+        <h1 className="text-2xl md:text-3xl font-bold mb-6 text-center bg-gradient-to-r from-purple-400 to-blue-400 text-transparent bg-clip-text">
+          Discover Musicians & Bands
         </h1>
 
-        <div className="relative mb-6">
-          <Input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Find musicians, bands, or venues..."
-            className="pl-10 h-12 text-lg bg-gray-900/50 border-gray-700 focus:border-purple-500 focus:ring-purple-500 rounded-xl"
-          />
-          <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-4 mb-2">
-          <div className="flex rounded-xl overflow-hidden border border-gray-700 flex-1">
-            {(["musician", "band", "venue"] as const).map((type) => (
-              <button
-                key={type}
-                onClick={() => {
-                  // Update the search type in state
-                  setSearchType(type);
-                }}
-                className={`flex-1 py-3 px-2 capitalize flex items-center justify-center gap-2 transition-colors ${
-                  searchType === type
-                    ? "bg-purple-800 text-white"
-                    : "bg-gray-900/50 text-gray-400 hover:bg-gray-800/50"
-                }`}
-              >
-                {getTypeIcon(type)}
-                {type}
-              </button>
-            ))}
+        {/* Search Form */}
+        <form onSubmit={handleSearchSubmit} className="relative mb-6">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+            <Input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search for musicians and bands..."
+              className="pl-10 h-12 text-lg bg-gray-900/50 border-gray-700 focus:border-purple-500 focus:ring-purple-500 rounded-xl"
+            />
+            {searchState.loading && (
+              <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 animate-spin" />
+            )}
           </div>
+        </form>
+
+        {/* Search Tabs */}
+        <div className="flex rounded-xl overflow-hidden border border-gray-700 mb-4">
+          <button
+            onClick={() => setActiveTab("musicians")}
+            className={cn(
+              "flex-1 py-3 px-4 flex items-center justify-center gap-2 transition-colors",
+              activeTab === "musicians"
+                ? "bg-purple-600 text-white"
+                : "bg-gray-900/50 text-gray-400 hover:bg-gray-800/50"
+            )}
+          >
+            <Music className="h-4 w-4" />
+            Musicians ({searchState.musicians.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("bands")}
+            className={cn(
+              "flex-1 py-3 px-4 flex items-center justify-center gap-2 transition-colors",
+              activeTab === "bands"
+                ? "bg-purple-600 text-white"
+                : "bg-gray-900/50 text-gray-400 hover:bg-gray-800/50"
+            )}
+          >
+            <Users className="h-4 w-4" />
+            Bands ({searchState.bands.length})
+          </button>
         </div>
 
-        {/* Recent searches */}
+        {/* Recent Searches */}
         {recentSearches.length > 0 && !searchTerm && (
-          <div className="mt-6">
-            <h2 className="text-sm font-medium text-gray-400 mb-2">
-              Recent searches:
-            </h2>
+          <div>
+            <h3 className="text-sm font-medium text-gray-400 mb-2">Recent searches:</h3>
             <div className="flex flex-wrap gap-2">
               {recentSearches.map((term, index) => (
                 <button
                   key={index}
+                  onClick={() => handleRecentSearchClick(term)}
                   className="px-3 py-1 rounded-full bg-gray-700/50 text-sm hover:bg-gray-600/50 transition-colors"
-                  onClick={() => {
-                    setSearchTerm(term);
-                  }}
                 >
+                  <Clock className="inline h-3 w-3 mr-1" />
                   {term}
                 </button>
               ))}
@@ -339,229 +203,242 @@ export default function SearchPage() {
         )}
       </div>
 
-      {isLoading && (
-        <div className="flex justify-center my-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+      {/* Error State */}
+      {searchState.error && (
+        <div className="bg-red-900/20 border border-red-900 text-red-300 p-4 rounded-xl">
+          <p className="text-center">{searchState.error}</p>
         </div>
       )}
 
-      {error && (
-        <div className="bg-red-900/20 border border-red-900 text-red-300 p-4 rounded-lg mb-6">
-          <p className="text-center">{error}</p>
-        </div>
-      )}
-
-      {!isLoading && !error && searchResults.length === 0 && searchTerm && (
+      {/* Empty State */}
+      {showEmptyState && (
         <div className="bg-gray-800/30 p-8 rounded-2xl text-center">
           <div className="text-5xl mb-4">🔍</div>
-          <p className="text-gray-300 mb-2">{`No results found for "${searchTerm}" as ${searchType}.`}</p>
+          <p className="text-gray-300 mb-2">
+            No {activeTab} found for "{searchTerm}"
+          </p>
           <p className="text-gray-400 text-sm">
-            Try a different search term or category.
+            Try a different search term or check the other tab.
           </p>
         </div>
       )}
 
-      {/* Search results list */}
-      {!isLoading && searchResults.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 mt-4">
-          {searchResults.map((result) => (
-            <div
-              key={result.id}
-              className="group bg-gray-800/30 rounded-2xl overflow-hidden border border-gray-700/50 hover:border-purple-500/50 transition-all duration-300 cursor-pointer shadow-lg hover:shadow-purple-900/20 transform hover:-translate-y-1"
-              onClick={() => router.push(`/${result.type}/${result.id}`)}
-            >
-              <div className="flex flex-col md:flex-row">
-                {/* Image/avatar section */}
-                <div className="w-full md:w-40 h-40 relative bg-gray-900/50 flex items-center justify-center overflow-hidden">
-                  {result.imageUrl ? (
-                    <img
-                      src={result.imageUrl}
-                      alt={result.name}
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                      onError={(e) => {
-                        // Fallback to placeholder on error
-                        const target = e.target as HTMLImageElement;
-                        target.onerror = null; // Prevent infinite error loop
-                        target.src = getAvatarPlaceholder(
-                          result.name,
-                          result.type
-                        );
-                      }}
-                    />
-                  ) : (
-                    // Placeholder avatar with initial
-                    <img
-                      src={getAvatarPlaceholder(result.name, result.type)}
-                      alt={result.name}
-                      className="w-full h-full object-cover"
-                    />
-                  )}
-
-                  {/* Type indicator with translucent overlay */}
-                  <div
-                    className={`absolute top-0 left-0 w-full h-full bg-gradient-to-t opacity-60 ${
-                      result.type === "musician"
-                        ? "from-purple-900/60"
-                        : result.type === "band"
-                        ? "from-pink-900/60"
-                        : "from-blue-900/60"
-                    }`}
-                  ></div>
-
-                  <div
-                    className={`absolute bottom-2 left-2 px-2 py-1 rounded-full text-xs font-medium flex items-center ${
-                      result.type === "musician"
-                        ? "bg-purple-900/80 text-purple-100"
-                        : result.type === "band"
-                        ? "bg-pink-900/80 text-pink-100"
-                        : "bg-blue-900/80 text-blue-100"
-                    }`}
-                  >
-                    {getTypeIcon(result.type)}
-                    <span className="ml-1 capitalize">{result.type}</span>
-                  </div>
-                </div>
-
-                {/* Content section */}
-                <div className="p-6 flex-1">
-                  <h3 className="text-xl font-semibold text-white mb-2 group-hover:text-purple-300 transition-colors">
-                    {result.name}
-                  </h3>
-
-                  {/* Additional details */}
-                  <div className="text-gray-400 text-sm mb-3 flex flex-wrap gap-2">
-                    {result.location && (
-                      <span className="inline-flex items-center">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                          className="w-4 h-4 mr-1"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M9.69 18.933l.003.001C9.89 19.02 10 19 10 19s.11.02.308-.066l.002-.001.006-.003.018-.008a5.741 5.741 0 00.281-.14c.186-.096.446-.24.757-.433.62-.384 1.445-.966 2.274-1.765C15.302 14.988 17 12.493 17 9A7 7 0 103 9c0 3.492 1.698 5.988 3.355 7.584a13.731 13.731 0 002.273 1.765 11.842 11.842 0 00.976.544l.062.029.018.008.006.003zM10 11.25a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5z"
-                          />
-                        </svg>
-                        {result.location}
-                      </span>
-                    )}
-                    {result.type === "musician" &&
-                      result.instruments &&
-                      result.instruments.length > 0 && (
-                        <span className="inline-flex items-center px-2 py-1 bg-gray-700/50 rounded-full">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 20 20"
-                            fill="currentColor"
-                            className="w-4 h-4 mr-1"
-                          >
-                            <path d="M8 16.25a.75.75 0 01.75-.75h2.5a.75.75 0 010 1.5h-2.5a.75.75 0 01-.75-.75z" />
-                            <path
-                              fillRule="evenodd"
-                              d="M4 2a2 2 0 00-2 2v11a3 3 0 003 3h10a3 3 0 003-3V4a2 2 0 00-2-2H4zm0 1.5a.5.5 0 00-.5.5v11c0 .83.67 1.5 1.5 1.5h10c.83 0 1.5-.67 1.5-1.5V4a.5.5 0 00-.5-.5H4z"
-                            />
-                          </svg>
-                          {result.instruments.slice(0, 3).join(", ")}
-                          {result.instruments.length > 3 && "..."}
-                        </span>
-                      )}
-                    {result.type === "band" && result.members !== undefined && (
-                      <span className="inline-flex items-center px-2 py-1 bg-gray-700/50 rounded-full">
-                        <UsersIcon className="w-4 h-4 mr-1" />
-                        {result.members} members
-                      </span>
-                    )}
-                    {result.type === "venue" &&
-                      result.capacity !== undefined && (
-                        <span className="inline-flex items-center px-2 py-1 bg-gray-700/50 rounded-full">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 20 20"
-                            fill="currentColor"
-                            className="w-4 h-4 mr-1"
-                          >
-                            <path d="M10 8a3 3 0 100-6 3 3 0 000 6zM3.465 14.493a1.23 1.23 0 00.41 1.412A9.957 9.957 0 0010 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 00-13.074.003z" />
-                          </svg>
-                          Capacity: {result.capacity}
-                        </span>
-                      )}
-                  </div>
-
-                  {/* Description */}
-                  {result.description && (
-                    <p className="text-gray-300 line-clamp-2 mb-3">
-                      {result.description}
-                    </p>
-                  )}
-
-                  {/* Genres */}
-                  {result.genres && result.genres.length > 0 && (
-                    <div className="mt-1 flex flex-wrap gap-2">
-                      {result.genres.slice(0, 4).map((genre, idx) => (
-                        <span
-                          key={idx}
-                          className={`px-2 py-1 rounded-full text-xs ${
-                            result.type === "musician"
-                              ? "bg-purple-900/30 text-purple-200"
-                              : result.type === "band"
-                              ? "bg-pink-900/30 text-pink-200"
-                              : "bg-blue-900/30 text-blue-200"
-                          }`}
-                        >
-                          {genre}
-                        </span>
-                      ))}
-                      {result.genres.length > 4 && (
-                        <span className="px-2 py-1 bg-gray-700/50 text-gray-300 rounded-full text-xs">
-                          +{result.genres.length - 4} more
-                        </span>
+      {/* Results */}
+      {hasResults && (
+        <div className="space-y-4">
+          {activeTab === "musicians" && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {searchState.musicians.map((musician) => (
+                <div
+                  key={musician.id}
+                  className="bg-gray-800/30 rounded-2xl p-4 border border-gray-700/50 hover:border-purple-500/50 transition-all duration-300"
+                >
+                  <div className="flex items-start gap-4">
+                    {/* Profile Picture */}
+                    <div className="relative w-16 h-16 rounded-full overflow-hidden flex-shrink-0">
+                      {musician.profile.profilePicture ? (
+                        <Image
+                          src={musician.profile.profilePicture}
+                          alt={getDisplayName(musician)}
+                          width={64}
+                          height={64}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.onerror = null;
+                            target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                              getDisplayName(musician)
+                            )}&background=6D28D9&color=fff`;
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-purple-600 flex items-center justify-center text-white font-bold text-lg">
+                          {getDisplayName(musician).charAt(0).toUpperCase()}
+                        </div>
                       )}
                     </div>
-                  )}
 
-                  {/* View profile button */}
-                  <div className="mt-4 flex justify-end">
-                    <span
-                      className={`inline-flex items-center text-xs font-medium ${
-                        result.type === "musician"
-                          ? "text-purple-400"
-                          : result.type === "band"
-                          ? "text-pink-400"
-                          : "text-blue-400"
-                      } group-hover:translate-x-1 transition-transform duration-300`}
-                    >
-                      View profile
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                        className="w-4 h-4 ml-1"
-                      >
-                        <path
-                          fillRule="evenodd"
-                          d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                    </span>
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <Link
+                            href={`/musician/${musician.id}`}
+                            className="font-semibold text-white hover:text-purple-400 transition-colors block truncate"
+                          >
+                            {getDisplayName(musician)}
+                          </Link>
+                          <p className="text-sm text-gray-400 truncate">
+                            @{musician.profile.username}
+                          </p>
+                        </div>
+                        
+                        {/* Follow Button */}
+                        {userProfile && userProfile.id !== musician.id && (
+                          <FollowButton
+                            targetId={musician.id}
+                            targetType="user"
+                            targetName={getDisplayName(musician)}
+                            size="sm"
+                            variant="outline"
+                          />
+                        )}
+                      </div>
+
+                      {/* Location */}
+                      {musician.profile.location && (
+                        <div className="flex items-center gap-1 mt-1">
+                          <MapPin className="h-3 w-3 text-gray-500" />
+                          <span className="text-xs text-gray-500">
+                            {musician.profile.location}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Bio */}
+                      {musician.profile.bio && (
+                        <p className="text-sm text-gray-300 mt-2 line-clamp-2">
+                          {musician.profile.bio}
+                        </p>
+                      )}
+
+                      {/* Genres */}
+                      {musician.profile.genres && musician.profile.genres.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {musician.profile.genres.slice(0, 3).map((genre) => (
+                            <span
+                              key={genre}
+                              className="px-2 py-1 bg-purple-600/30 text-purple-300 text-xs rounded-full"
+                            >
+                              {genre}
+                            </span>
+                          ))}
+                          {musician.profile.genres.length > 3 && (
+                            <span className="px-2 py-1 bg-gray-600/30 text-gray-300 text-xs rounded-full">
+                              +{musician.profile.genres.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Instruments */}
+                      {musician.profile.instruments && musician.profile.instruments.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {musician.profile.instruments.slice(0, 3).map((instrument) => (
+                            <span
+                              key={instrument}
+                              className="px-2 py-1 bg-blue-600/30 text-blue-300 text-xs rounded-full"
+                            >
+                              {instrument}
+                            </span>
+                          ))}
+                          {musician.profile.instruments.length > 3 && (
+                            <span className="px-2 py-1 bg-gray-600/30 text-gray-300 text-xs rounded-full">
+                              +{musician.profile.instruments.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          )}
 
-      {/* Debug information - only visible during development */}
-      {process.env.NODE_ENV === "development" && debug.length > 0 && (
-        <div className="mt-8 p-4 border rounded bg-black/10 text-xs">
-          <h4 className="font-bold mb-2">Debug Info:</h4>
-          <pre className="whitespace-pre-wrap">
-            {debug.map((msg, i) => (
-              <div key={i}>{msg}</div>
-            ))}
-          </pre>
+          {activeTab === "bands" && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {searchState.bands.map((band) => (
+                <div
+                  key={band.id}
+                  className="bg-gray-800/30 rounded-2xl p-4 border border-gray-700/50 hover:border-purple-500/50 transition-all duration-300"
+                >
+                  <div className="flex items-start gap-4">
+                    {/* Band Picture */}
+                    <div className="relative w-16 h-16 rounded-full overflow-hidden flex-shrink-0">
+                      {band.profilePicture ? (
+                        <Image
+                          src={band.profilePicture}
+                          alt={band.name}
+                          width={64}
+                          height={64}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-purple-600 flex items-center justify-center text-white font-bold text-lg">
+                          {band.name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <Link
+                            href={`/bands/${band.id}`}
+                            className="font-semibold text-white hover:text-purple-400 transition-colors block truncate"
+                          >
+                            {band.name}
+                          </Link>
+                          <p className="text-sm text-gray-400">
+                            {band.members.filter(m => m.isActive).length} members
+                          </p>
+                        </div>
+                        
+                        {/* Follow Button */}
+                        {userProfile && !band.members.some(m => m.userId === userProfile.id && m.isActive) && (
+                          <FollowButton
+                            targetId={band.id}
+                            targetType="band"
+                            targetName={band.name}
+                            size="sm"
+                            variant="outline"
+                          />
+                        )}
+                      </div>
+
+                      {/* Location */}
+                      {band.location && (
+                        <div className="flex items-center gap-1 mt-1">
+                          <MapPin className="h-3 w-3 text-gray-500" />
+                          <span className="text-xs text-gray-500">
+                            {band.location}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Bio */}
+                      {band.bio && (
+                        <p className="text-sm text-gray-300 mt-2 line-clamp-2">
+                          {band.bio}
+                        </p>
+                      )}
+
+                      {/* Genres */}
+                      {band.genres && band.genres.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {band.genres.slice(0, 3).map((genre) => (
+                            <span
+                              key={genre}
+                              className="px-2 py-1 bg-purple-600/30 text-purple-300 text-xs rounded-full"
+                            >
+                              {genre}
+                            </span>
+                          ))}
+                          {band.genres.length > 3 && (
+                            <span className="px-2 py-1 bg-gray-600/30 text-gray-300 text-xs rounded-full">
+                              +{band.genres.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

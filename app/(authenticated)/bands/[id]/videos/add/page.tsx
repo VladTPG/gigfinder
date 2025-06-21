@@ -8,6 +8,7 @@ import Link from "next/link";
 import { IBand, BandPermission } from "@/lib/types";
 import { getBandById, hasPermission } from "@/lib/firebase/bands";
 import { addDocument, updateDocument } from "@/lib/firebase/firestore";
+import { serverTimestamp } from "firebase/firestore";
 import { 
   extractYouTubeId, 
   getYouTubeThumbnail, 
@@ -138,8 +139,8 @@ export default function AddBandVideoPage({
         description,
         isYouTube: true,
         isBandVideo: true,
-        createdAt: new Date(),
-        updatedAt: new Date()
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
       };
 
       const docRef = await addDocument("videos", newVideo);

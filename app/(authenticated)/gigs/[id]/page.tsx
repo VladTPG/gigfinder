@@ -8,8 +8,11 @@ import {
   createGigApplication,
   getGigApplications,
   deleteGig,
+  updateGigApplication,
 } from "@/lib/firebase/gigs";
-import { IGig, IGigApplication, ApplicationStatus } from "@/lib/types";
+import { getUserBands } from "@/lib/firebase/bands";
+import { IGig, IGigApplication, ApplicationStatus } from "@/lib/types/gig";
+import { IBand } from "@/lib/types/band";
 import { Button } from "@/components/ui/button";
 import {
   Clock,
@@ -18,6 +21,7 @@ import {
   Users,
   ArrowLeft,
   Music,
+  Plus,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -31,11 +35,17 @@ export default function GigDetailPage() {
   const [applications, setApplications] = useState<IGigApplication[]>([]);
   const [userApplication, setUserApplication] =
     useState<IGigApplication | null>(null);
+  const [bandApplications, setBandApplications] = useState<IGigApplication[]>([]);
+  const [userBands, setUserBands] = useState<IBand[]>([]);
+  const [selectedBand, setSelectedBand] = useState<IBand | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isApplying, setIsApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [applicationMessage, setApplicationMessage] = useState("");
   const [showApplicationForm, setShowApplicationForm] = useState(false);
+  const [showBandApplicationForm, setShowBandApplicationForm] = useState(false);
+  const [applicationType, setApplicationType] = useState<"musician" | "band">("musician");
+  const [processingApplications, setProcessingApplications] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (gigId) {
@@ -65,13 +75,26 @@ export default function GigDetailPage() {
         setApplications(applicationsList);
       }
 
-      // Check if current user has already applied
+      // Check if current user has already applied (as musician or through bands)
       if (userProfile?.role === "musician") {
         const applicationsList = await getGigApplications(gigId);
-        const existingApplication = applicationsList.find(
-          (app) => app.applicantId === userProfile.id
+        
+        // Check for personal application
+        const personalApplication = applicationsList.find(
+          (app) => app.applicantId === userProfile.id && app.applicantType === "musician"
         );
-        setUserApplication(existingApplication || null);
+        
+        // Load user's bands
+        const bands = await getUserBands(userProfile.id);
+        setUserBands(bands);
+        
+        // Check for band applications where user is a member
+        const bandApplications = applicationsList.filter(
+          (app) => app.applicantType === "band" && bands.some(band => band.id === app.applicantId)
+        );
+        
+        setUserApplication(personalApplication || null);
+        setBandApplications(bandApplications);
       }
     } catch (err) {
       console.error("Error loading gig data:", err);
@@ -106,6 +129,80 @@ export default function GigDetailPage() {
       setError("Failed to submit application. Please try again.");
     } finally {
       setIsApplying(false);
+    }
+  };
+
+  const handleBandApplyToGig = async () => {
+    if (!userProfile || userProfile.role !== "musician" || !gig || !selectedBand) {
+      return;
+    }
+
+    setIsApplying(true);
+    try {
+      const applicationData = {
+        gigId: gig.id,
+        applicantId: selectedBand.id,
+        applicantType: "band" as const,
+        applicantName: selectedBand.name,
+        message: applicationMessage.trim() || undefined,
+        status: ApplicationStatus.PENDING,
+      };
+
+      await createGigApplication(applicationData);
+      await loadGigData(); // Reload to show the new application
+      setShowBandApplicationForm(false);
+      setApplicationMessage("");
+      setSelectedBand(null);
+    } catch (err) {
+      console.error("Error applying to gig:", err);
+      setError("Failed to submit application. Please try again.");
+    } finally {
+      setIsApplying(false);
+    }
+  };
+
+  const handleApplicationResponse = async (
+    applicationId: string,
+    status: ApplicationStatus,
+    responseMessage?: string
+  ) => {
+    setProcessingApplications(prev => new Set(prev).add(applicationId));
+
+    try {
+      // Update the application status
+      await updateGigApplication(applicationId, {
+        status,
+        responseMessage: responseMessage?.trim() || undefined,
+      });
+
+      // If accepting an application, reject all other pending applications
+      if (status === ApplicationStatus.ACCEPTED) {
+        const otherPendingApplications = applications.filter(
+          app => app.id !== applicationId && app.status === ApplicationStatus.PENDING
+        );
+
+        // Reject all other pending applications
+        const rejectPromises = otherPendingApplications.map(app =>
+          updateGigApplication(app.id, {
+            status: ApplicationStatus.REJECTED,
+            responseMessage: "Another applicant was selected for this gig.",
+          })
+        );
+
+        await Promise.all(rejectPromises);
+      }
+
+      // Reload the data to show updated statuses
+      await loadGigData();
+    } catch (err) {
+      console.error("Error updating application:", err);
+      setError("Failed to update application. Please try again.");
+    } finally {
+      setProcessingApplications(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(applicationId);
+        return newSet;
+      });
     }
   };
 
@@ -165,6 +262,8 @@ export default function GigDetailPage() {
   }
 
   const canApply = userProfile?.role === "musician" && !userApplication;
+  const canApplyWithBand = userProfile?.role === "musician" && userBands.length > 0 && 
+    !bandApplications.some(app => userBands.some(band => band.id === app.applicantId));
   const isVenueManager =
     userProfile?.role === "manager" && userProfile.id === gig.createdBy;
 
@@ -179,6 +278,15 @@ export default function GigDetailPage() {
               Back to Gigs
             </Button>
           </Link>
+          
+          {userProfile?.role === "manager" && (
+            <Link href="/gigs/create">
+              <Button className="flex items-center gap-2">
+                <Plus className="h-4 w-4" />
+                Create Gig
+              </Button>
+            </Link>
+          )}
         </div>
 
         {/* Main Gig Information */}
@@ -275,13 +383,30 @@ export default function GigDetailPage() {
           {/* Action Buttons */}
           <div className="mt-6 pt-6 border-t border-border">
             <div className="flex flex-wrap gap-3">
-              {canApply && !showApplicationForm && (
+              {canApply && !showApplicationForm && !showBandApplicationForm && (
                 <Button
-                  onClick={() => setShowApplicationForm(true)}
+                  onClick={() => {
+                    setApplicationType("musician");
+                    setShowApplicationForm(true);
+                  }}
                   className="flex-1 sm:flex-none"
                 >
                   <Music className="h-4 w-4 mr-2" />
-                  Apply to Perform
+                  Apply as Musician
+                </Button>
+              )}
+
+              {canApplyWithBand && !showApplicationForm && !showBandApplicationForm && (
+                <Button
+                  onClick={() => {
+                    setApplicationType("band");
+                    setShowBandApplicationForm(true);
+                  }}
+                  variant="outline"
+                  className="flex-1 sm:flex-none"
+                >
+                  <Users className="h-4 w-4 mr-2" />
+                  Apply with Band
                 </Button>
               )}
 
@@ -352,7 +477,7 @@ export default function GigDetailPage() {
 
             {userApplication && (
               <div className="bg-secondary/20 p-4 rounded-lg">
-                <h3 className="font-semibold mb-2">Your Application</h3>
+                <h3 className="font-semibold mb-2">Your Personal Application</h3>
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-sm text-muted-foreground">Status:</span>
                   <span
@@ -379,15 +504,70 @@ export default function GigDetailPage() {
                     {userApplication.responseMessage}
                   </p>
                 )}
+                {userApplication.status === ApplicationStatus.ACCEPTED && (
+                  <div className="mt-3">
+                    <Link href={`/messages?gigId=${gig?.id}&artistId=${userProfile?.id}`}>
+                      <Button size="sm" className="bg-purple-600 hover:bg-purple-700">
+                        Message Venue
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {bandApplications.length > 0 && (
+              <div className="bg-secondary/20 p-4 rounded-lg mt-4">
+                <h3 className="font-semibold mb-2">Your Band Applications</h3>
+                <div className="space-y-3">
+                  {bandApplications.map((application) => (
+                    <div key={application.id} className="border-l-4 border-accent pl-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-medium">{application.applicantName}</span>
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-medium ${
+                            application.status === ApplicationStatus.PENDING
+                              ? "bg-yellow-100 text-yellow-800"
+                              : application.status === ApplicationStatus.ACCEPTED
+                              ? "bg-green-100 text-green-800"
+                              : "bg-red-100 text-red-800"
+                          }`}
+                        >
+                          {application.status.charAt(0).toUpperCase() +
+                            application.status.slice(1)}
+                        </span>
+                      </div>
+                      {application.message && (
+                        <p className="text-sm text-muted-foreground">
+                          <strong>Message:</strong> {application.message}
+                        </p>
+                      )}
+                      {application.responseMessage && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          <strong>Venue response:</strong> {application.responseMessage}
+                        </p>
+                      )}
+                      {application.status === ApplicationStatus.ACCEPTED && (
+                        <div className="mt-2">
+                          <Link href={`/messages?gigId=${gig?.id}&artistId=${application.applicantId}`}>
+                            <Button size="sm" className="bg-purple-600 hover:bg-purple-700">
+                              Message Venue
+                            </Button>
+                          </Link>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* Application Form */}
+        {/* Musician Application Form */}
         {showApplicationForm && (
           <div className="bg-card rounded-xl shadow-lg p-6 md:p-8">
-            <h2 className="text-xl font-bold mb-4">Apply to Perform</h2>
+            <h2 className="text-xl font-bold mb-4">Apply as Musician</h2>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-2">
@@ -415,6 +595,71 @@ export default function GigDetailPage() {
                   onClick={() => {
                     setShowApplicationForm(false);
                     setApplicationMessage("");
+                  }}
+                  disabled={isApplying}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Band Application Form */}
+        {showBandApplicationForm && (
+          <div className="bg-card rounded-xl shadow-lg p-6 md:p-8">
+            <h2 className="text-xl font-bold mb-4">Apply with Band</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Select Band
+                </label>
+                <select
+                  value={selectedBand?.id || ""}
+                  onChange={(e) => {
+                    const band = userBands.find(b => b.id === e.target.value);
+                    setSelectedBand(band || null);
+                  }}
+                  className="w-full p-3 border border-border rounded-lg"
+                >
+                  <option value="">Choose a band...</option>
+                  {userBands
+                    .filter(band => !bandApplications.some(app => app.applicantId === band.id))
+                    .map((band) => (
+                      <option key={band.id} value={band.id}>
+                        {band.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Message to Venue (Optional)
+                </label>
+                <textarea
+                  value={applicationMessage}
+                  onChange={(e) => setApplicationMessage(e.target.value)}
+                  placeholder="Tell the venue why your band would be perfect for this gig..."
+                  className="w-full p-3 border border-border rounded-lg min-h-24 resize-none"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  onClick={handleBandApplyToGig}
+                  disabled={isApplying || !selectedBand}
+                  className="flex-1"
+                >
+                  {isApplying ? "Submitting..." : "Submit Band Application"}
+                </Button>
+
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowBandApplicationForm(false);
+                    setApplicationMessage("");
+                    setSelectedBand(null);
                   }}
                   disabled={isApplying}
                 >
@@ -475,21 +720,46 @@ export default function GigDetailPage() {
                       </p>
                     )}
 
-                    {application.status === ApplicationStatus.PENDING && (
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline">
-                          Accept
-                        </Button>
-                        <Button size="sm" variant="outline">
-                          Reject
-                        </Button>
-                        <Link href={`/musician/${application.applicantId}`}>
-                          <Button size="sm" variant="ghost">
-                            View Profile
+                    <div className="flex gap-2">
+                      {application.status === ApplicationStatus.PENDING && (
+                        <>
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            onClick={() => handleApplicationResponse(application.id, ApplicationStatus.ACCEPTED, "Application accepted.")}
+                            disabled={processingApplications.has(application.id)}
+                          >
+                            Accept
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            onClick={() => handleApplicationResponse(application.id, ApplicationStatus.REJECTED, "Application rejected.")}
+                            disabled={processingApplications.has(application.id)}
+                          >
+                            Reject
+                          </Button>
+                        </>
+                      )}
+                      
+                      {application.status === ApplicationStatus.ACCEPTED && (
+                        <Link href={`/messages?gigId=${gig?.id}&artistId=${application.applicantId}`}>
+                          <Button size="sm" className="bg-purple-600 hover:bg-purple-700">
+                            Message
                           </Button>
                         </Link>
-                      </div>
-                    )}
+                      )}
+                      
+                      <Link href={
+                        application.applicantType === "band" 
+                          ? `/bands/${application.applicantId}` 
+                          : `/musician/${application.applicantId}`
+                      }>
+                        <Button size="sm" variant="ghost">
+                          View Profile
+                        </Button>
+                      </Link>
+                    </div>
                   </div>
                 ))}
               </div>

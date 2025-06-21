@@ -1,4 +1,4 @@
-import { serverTimestamp } from "firebase/firestore";
+import { serverTimestamp, FieldValue } from "firebase/firestore";
 
 export interface IVideo {
   id: string; // Firestore document ID
@@ -14,6 +14,6 @@ export interface IVideo {
   description?: string; // Optional description
   isYouTube: boolean; // Flag to indicate if this is a YouTube video
   isBandVideo: boolean; // Flag to indicate if this is a band video
-  createdAt: typeof serverTimestamp;
-  updatedAt: typeof serverTimestamp;
+  createdAt: FieldValue;
+  updatedAt: FieldValue;
 }

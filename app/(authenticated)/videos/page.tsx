@@ -12,6 +12,7 @@ import {
   deleteDocument,
   queryDocuments 
 } from "@/lib/firebase/firestore";
+import { serverTimestamp } from "firebase/firestore";
 import { 
   extractYouTubeId, 
   getYouTubeThumbnail, 
@@ -130,7 +131,7 @@ export default function VideosPage() {
 
       const selectedBand = selectedBandId ? userBands.find(b => b.id === selectedBandId) : null;
       
-      const newVideo = {
+      const newVideo: any = {
         title: title || "Untitled Video",
         artist: selectedBand ? selectedBand.name : (
           userProfile.profile.firstName && userProfile.profile.lastName 
@@ -141,13 +142,19 @@ export default function VideosPage() {
         youtubeId,
         thumbnailUrl: getYouTubeThumbnail(youtubeId),
         userId: userProfile.id,
-        bandId: selectedBandId || undefined,
         genres: selectedGenres,
         instruments: selectedInstruments,
         description,
         isYouTube: true,
-        isBandVideo: !!selectedBandId
+        isBandVideo: !!selectedBandId,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
       };
+
+      // Only add bandId if selectedBandId exists
+      if (selectedBandId) {
+        newVideo.bandId = selectedBandId;
+      }
 
       const docRef = await addDocument("videos", newVideo);
       const videoWithId = { ...newVideo, id: docRef.id } as IVideo;
