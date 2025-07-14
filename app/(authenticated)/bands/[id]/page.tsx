@@ -245,16 +245,7 @@ export default function BandProfilePage({
                 <div className="flex flex-wrap justify-center sm:justify-end gap-2">
                   {isMember() ? (
                     <>
-                      {canManage(BandPermission.MANAGE_PROFILE) && (
-                        <Link
-                          href={`/bands/${bandId}/edit`}
-                          className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-lg hover:shadow-purple-500/25 flex items-center gap-2 min-h-[44px] touch-manipulation"
-                        >
-                          <span>✏️</span>
-                          <span className="hidden xs:inline">Edit Band</span>
-                          <span className="xs:hidden">Edit</span>
-                        </Link>
-                      )}
+
                       {canManage(BandPermission.MANAGE_MEMBERS) && (
                         <Link
                           href={`/bands/${bandId}/members`}

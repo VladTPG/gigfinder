@@ -155,6 +155,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           if (profile) {
             console.log("Profile found:", profile.email);
+            
+            // Auto-migrate user data if needed (non-blocking)
+            try {
+              const { migrateUserFollowingData } = await import("@/lib/firebase/users");
+              migrateUserFollowingData(userId).catch(error => {
+                console.warn("Auto-migration failed:", error);
+              });
+            } catch (migrationError) {
+              console.warn("Could not load migration function:", migrationError);
+            }
+            
             return profile;
           } else if (attempt === retries) {
             console.warn("No profile found after all attempts");
@@ -274,6 +285,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const profile = await getDocumentById<IUser>("users", user.uid);
       if (profile) {
         console.log("Profile refreshed successfully:", profile.email);
+        
+        // Auto-migrate user data if needed (non-blocking)
+        try {
+          const { migrateUserFollowingData } = await import("@/lib/firebase/users");
+          migrateUserFollowingData(user.uid).catch(error => {
+            console.warn("Auto-migration failed during refresh:", error);
+          });
+        } catch (migrationError) {
+          console.warn("Could not load migration function during refresh:", migrationError);
+        }
+        
         setUserProfile(profile);
       } else {
         console.warn("No profile found during manual refresh");

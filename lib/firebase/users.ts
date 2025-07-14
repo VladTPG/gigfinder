@@ -1,8 +1,101 @@
 import { queryDocuments, getDocumentById, updateDocument } from "./firestore";
 import { IUser } from "@/lib/types";
 import { arrayUnion, arrayRemove } from "firebase/firestore";
+import { getBandById } from "./bands";
 
 const USERS_COLLECTION = "users";
+
+// Migration function to separate following arrays for existing users
+export const migrateUserFollowingData = async (userId: string): Promise<void> => {
+  try {
+    const user = await getUserById(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Skip if already migrated (has the new arrays)
+    if (user.followingUsers || user.followingBands) {
+      console.log(`User ${userId} already migrated or has new data structure`);
+      return;
+    }
+
+    // Skip if no following data to migrate
+    if (!user.following || user.following.length === 0) {
+      console.log(`User ${userId} has no following data to migrate`);
+      return;
+    }
+
+    console.log(`Migrating following data for user ${userId}`);
+
+    // Separate users from bands
+    const followingUsers: string[] = [];
+    const followingBands: string[] = [];
+
+    for (const id of user.following) {
+      try {
+        // Try to get as user first
+        const userData = await getUserById(id);
+        if (userData) {
+          followingUsers.push(id);
+          continue;
+        }
+        
+        // Try to get as band
+        const bandData = await getBandById(id);
+        if (bandData) {
+          followingBands.push(id);
+        }
+      } catch (error) {
+        console.warn(`Could not determine type of ID ${id} for user ${userId}`);
+      }
+    }
+
+    // Update user with separated arrays
+    await updateDocument(USERS_COLLECTION, userId, {
+      followingUsers,
+      followingBands
+    });
+
+    console.log(`Migration completed for user ${userId}: ${followingUsers.length} users, ${followingBands.length} bands`);
+  } catch (error) {
+    console.error(`Error migrating user ${userId}:`, error);
+    throw error;
+  }
+};
+
+// Batch migration for all users (use carefully)
+export const migrateAllUsersFollowingData = async (batchSize: number = 10): Promise<void> => {
+  try {
+    console.log("Starting batch migration of all users...");
+    
+    // Get all users
+    const allUsers = await queryDocuments<IUser>(USERS_COLLECTION, []);
+    console.log(`Found ${allUsers.length} users to potentially migrate`);
+    
+    // Process in batches
+    for (let i = 0; i < allUsers.length; i += batchSize) {
+      const batch = allUsers.slice(i, i + batchSize);
+      console.log(`Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(allUsers.length / batchSize)}`);
+      
+      // Process batch in parallel
+      const migrationPromises = batch.map(user => 
+        migrateUserFollowingData(user.id).catch(error => {
+          console.error(`Failed to migrate user ${user.id}:`, error);
+        })
+      );
+      
+      await Promise.all(migrationPromises);
+      
+      // Small delay between batches to avoid overwhelming the database
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    console.log("Batch migration completed");
+  } catch (error) {
+    console.error("Error in batch migration:", error);
+    throw error;
+  }
+};
 
 // Search users by username, first name, or last name
 export const searchUsers = async (searchTerm: string, limitTo: number = 20): Promise<IUser[]> => {
@@ -77,7 +170,11 @@ export const followUser = async (followerId: string, targetUserId: string): Prom
       throw new Error("Follower user not found");
     }
 
-    if (follower.following.includes(targetUserId)) {
+    // Check both old and new following arrays
+    const isAlreadyFollowing = follower.following?.includes(targetUserId) || 
+                              follower.followingUsers?.includes(targetUserId);
+    
+    if (isAlreadyFollowing) {
       throw new Error("Already following this user");
     }
 
@@ -91,7 +188,8 @@ export const followUser = async (followerId: string, targetUserId: string): Prom
     await Promise.all([
       // Add to follower's following list
       updateDocument(USERS_COLLECTION, followerId, {
-        following: arrayUnion(targetUserId)
+        followingUsers: arrayUnion(targetUserId),
+        following: arrayUnion(targetUserId) // Keep for backward compatibility
       }),
       // Add to target's followers list
       updateDocument(USERS_COLLECTION, targetUserId, {
@@ -117,7 +215,8 @@ export const unfollowUser = async (followerId: string, targetUserId: string): Pr
     await Promise.all([
       // Remove from follower's following list
       updateDocument(USERS_COLLECTION, followerId, {
-        following: arrayRemove(targetUserId)
+        followingUsers: arrayRemove(targetUserId),
+        following: arrayRemove(targetUserId) // Keep for backward compatibility
       }),
       // Remove from target's followers list
       updateDocument(USERS_COLLECTION, targetUserId, {
@@ -136,7 +235,10 @@ export const unfollowUser = async (followerId: string, targetUserId: string): Pr
 export const isFollowingUser = async (followerId: string, targetUserId: string): Promise<boolean> => {
   try {
     const follower = await getUserById(followerId);
-    return follower ? follower.following.includes(targetUserId) : false;
+    if (!follower) return false;
+    
+    // Check both new and old following arrays
+    return follower.followingUsers?.includes(targetUserId) || follower.following?.includes(targetUserId) || false;
   } catch (error) {
     console.error("Error checking follow status:", error);
     return false;
@@ -162,11 +264,35 @@ export const getUserFollowers = async (userId: string): Promise<IUser[]> => {
 export const getUserFollowing = async (userId: string): Promise<IUser[]> => {
   try {
     const user = await getUserById(userId);
-    if (!user || user.following.length === 0) {
+    if (!user) {
       return [];
     }
 
-    return await getUsersByIds(user.following);
+    // Use the new followingUsers array, fallback to filtering the old following array
+    let userIds: string[] = [];
+    
+    if (user.followingUsers && user.followingUsers.length > 0) {
+      userIds = user.followingUsers;
+    } else if (user.following && user.following.length > 0) {
+      // Fallback for users with old data structure - filter out band IDs
+      const userPromises = user.following.map(async (id) => {
+        try {
+          const foundUser = await getUserById(id);
+          return foundUser ? id : null;
+        } catch {
+          return null; // This ID might be a band ID, not a user ID
+        }
+      });
+      
+      const results = await Promise.all(userPromises);
+      userIds = results.filter((id): id is string => id !== null);
+    }
+
+    if (userIds.length === 0) {
+      return [];
+    }
+
+    return await getUsersByIds(userIds);
   } catch (error) {
     console.error("Error getting user following:", error);
     throw error;
@@ -184,9 +310,17 @@ export const getUserFollowStats = async (userId: string): Promise<{
       return { followersCount: 0, followingCount: 0 };
     }
 
+    // Calculate following count from both users and bands
+    const followingUsersCount = user.followingUsers?.length || 0;
+    const followingBandsCount = user.followingBands?.length || 0;
+    const legacyFollowingCount = user.following?.length || 0;
+    
+    // Use new arrays if available, otherwise fall back to legacy count
+    const totalFollowingCount = (followingUsersCount + followingBandsCount) || legacyFollowingCount;
+
     return {
-      followersCount: user.followers.length,
-      followingCount: user.following.length
+      followersCount: user.followers?.length || 0,
+      followingCount: totalFollowingCount
     };
   } catch (error) {
     console.error("Error getting follow stats:", error);

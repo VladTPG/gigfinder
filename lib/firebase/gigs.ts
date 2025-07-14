@@ -397,6 +397,42 @@ export const getAcceptedGigs = async (
   }
 };
 
+// Get upcoming accepted gigs for a musician or band
+export const getUpcomingAcceptedGigs = async (
+  applicantId: string
+): Promise<IGig[]> => {
+  try {
+    const allAcceptedGigs = await getAcceptedGigs(applicantId);
+    const now = new Date();
+    
+    // Filter to only upcoming gigs (gigs in the future)
+    return allAcceptedGigs
+      .filter(gig => gig.date >= now)
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+  } catch (error) {
+    console.error("Error getting upcoming accepted gigs:", error);
+    throw error;
+  }
+};
+
+// Get past accepted gigs for a musician or band
+export const getPastAcceptedGigs = async (
+  applicantId: string
+): Promise<IGig[]> => {
+  try {
+    const allAcceptedGigs = await getAcceptedGigs(applicantId);
+    const now = new Date();
+    
+    // Filter to only past gigs (gigs that have already occurred)
+    return allAcceptedGigs
+      .filter(gig => gig.date < now)
+      .sort((a, b) => b.date.getTime() - a.date.getTime()); // Sort descending for past gigs
+  } catch (error) {
+    console.error("Error getting past accepted gigs:", error);
+    throw error;
+  }
+};
+
 // Check if a gig has any accepted applications
 export const gigHasAcceptedApplications = async (gigId: string): Promise<boolean> => {
   try {
@@ -412,6 +448,32 @@ export const gigHasAcceptedApplications = async (gigId: string): Promise<boolean
   } catch (error) {
     console.error("Error checking gig accepted applications:", error);
     return false;
+  }
+};
+
+// Get available gigs (published, upcoming, and without accepted applications)
+export const getAvailableGigs = async (limitCount: number = 20): Promise<IGig[]> => {
+  try {
+    // First get all upcoming gigs
+    const upcomingGigs = await getUpcomingGigs(limitCount * 2); // Get more to account for filtering
+    
+    // Filter out gigs that already have accepted applications
+    const availableGigs: IGig[] = [];
+    
+    for (const gig of upcomingGigs) {
+      const hasAcceptedApps = await gigHasAcceptedApplications(gig.id);
+      if (!hasAcceptedApps) {
+        availableGigs.push(gig);
+        if (availableGigs.length >= limitCount) {
+          break;
+        }
+      }
+    }
+    
+    return availableGigs;
+  } catch (error) {
+    console.error("Error getting available gigs:", error);
+    throw error;
   }
 };
 

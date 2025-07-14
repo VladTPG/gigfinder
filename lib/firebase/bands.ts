@@ -609,7 +609,8 @@ export const followBand = async (userId: string, bandId: string): Promise<void> 
       }),
       // Add band to user's following (bands they follow)
       updateDocument("users", userId, {
-        following: arrayUnion(bandId)
+        followingBands: arrayUnion(bandId),
+        following: arrayUnion(bandId) // Keep for backward compatibility
       })
     ]);
 
@@ -631,7 +632,8 @@ export const unfollowBand = async (userId: string, bandId: string): Promise<void
       }),
       // Remove band from user's following
       updateDocument("users", userId, {
-        following: arrayRemove(bandId)
+        followingBands: arrayRemove(bandId),
+        following: arrayRemove(bandId) // Keep for backward compatibility
       })
     ]);
 
@@ -679,21 +681,38 @@ export const getBandFollowers = async (bandId: string): Promise<IUser[]> => {
 export const getUserFollowedBands = async (userId: string): Promise<IBand[]> => {
   try {
     const user = await getDocumentById<IUser>("users", userId);
-    if (!user || user.following.length === 0) {
+    if (!user) {
       return [];
     }
 
-    // Filter following list to only include band IDs (not user IDs)
-    // We can distinguish by checking if the ID corresponds to a band
-    const bandPromises = user.following.map(async (id) => {
-      try {
-        return await getBandById(id);
-      } catch {
-        return null; // This ID might be a user ID, not a band ID
-      }
-    });
+    // Use the new followingBands array, fallback to filtering the old following array
+    let bandIds: string[] = [];
     
+    if (user.followingBands && user.followingBands.length > 0) {
+      bandIds = user.followingBands;
+    } else if (user.following && user.following.length > 0) {
+      // Fallback for users with old data structure
+      const bandPromises = user.following.map(async (id) => {
+        try {
+          const band = await getBandById(id);
+          return band ? id : null;
+        } catch {
+          return null; // This ID might be a user ID, not a band ID
+        }
+      });
+      
+      const results = await Promise.all(bandPromises);
+      bandIds = results.filter((id): id is string => id !== null);
+    }
+
+    if (bandIds.length === 0) {
+      return [];
+    }
+
+    // Get all band details
+    const bandPromises = bandIds.map(bandId => getBandById(bandId));
     const bands = await Promise.all(bandPromises);
+    
     return bands.filter((band): band is IBand => band !== null);
   } catch (error) {
     console.error("Error getting user followed bands:", error);

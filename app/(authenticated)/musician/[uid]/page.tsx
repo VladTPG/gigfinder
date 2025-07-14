@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { getDocumentById, queryDocuments } from "@/lib/firebase/firestore";
 import { getUserBands } from "@/lib/firebase/bands";
-import { getAcceptedGigs } from "@/lib/firebase/gigs";
+import { getUpcomingAcceptedGigs } from "@/lib/firebase/gigs";
 import { useRouter } from "next/navigation";
 import { IUser, IVideo, IBand, IGig } from "@/lib/types";
 import Image from "next/image";
@@ -60,17 +60,13 @@ export default function MusicianProfilePage({
           ]);
           setVideos((userVideos as IVideo[]).slice(0, 3));
 
-          // Fetch following if available
-          if (userData.following && userData.following.length > 0) {
-            const followingPromises = userData.following
-              .slice(0, 4)
-              .map((userId: string) => getDocumentById("users", userId));
-            const followingResults = await Promise.all(followingPromises);
-            setFollowing(followingResults.filter(Boolean) as IUser[]);
-          }
+          // Fetch following users using the new method
+          const { getUserFollowing } = await import("@/lib/firebase/users");
+          const followingUsers = await getUserFollowing(uid);
+          setFollowing(followingUsers.slice(0, 4));
 
           // Fetch accepted gigs
-          const gigs = await getAcceptedGigs(uid);
+          const gigs = await getUpcomingAcceptedGigs(uid);
           setAcceptedGigs(gigs);
         } else {
           setError("Musician not found");
@@ -205,7 +201,9 @@ export default function MusicianProfilePage({
             href={`/musician/${musician.id}/following`}
             className="text-center hover:text-purple-400 transition-colors"
           >
-            <div className="text-lg font-bold">{musician.following?.length || 0}</div>
+            <div className="text-lg font-bold">
+              {(musician.followingUsers?.length || 0) + (musician.followingBands?.length || 0) || musician.following?.length || 0}
+            </div>
             <div className="text-xs text-gray-400">Following</div>
           </Link>
         </div>
@@ -375,7 +373,7 @@ export default function MusicianProfilePage({
       <div className="px-4 bg-gray-800/30 p-5 rounded-2xl max-w-3xl mx-auto">
         <div className="flex justify-between items-center mb-4">
           <h2 className="font-bold text-lg">
-            Following - {musician.following?.length || 0}
+            Following - {musician.followingUsers?.length || musician.following?.length || 0}
           </h2>
           <Link
             href={`/musician/${musician.id}/following`}

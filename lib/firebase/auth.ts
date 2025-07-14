@@ -53,6 +53,8 @@ export const registerUser = async (
       },
       followers: [],
       following: [],
+      followingUsers: [],
+      followingBands: [],
       videos: [],
       bands: [], // Initialize empty bands array
       bandInvitations: [], // Initialize empty band invitations array

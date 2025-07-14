@@ -45,12 +45,9 @@ export default function FeedPage() {
         // Load recent bands
         const bands = await queryDocuments("bands", []);
         
-        // Load recent gigs (published and in the future)
-        const currentDate = new Date();
-        const gigs = await queryDocuments("gigs", [
-          { field: "status", operator: "==", value: GigStatus.PUBLISHED },
-          { field: "date", operator: ">=", value: currentDate }
-        ]);
+        // Load recent available gigs (published, upcoming, and without accepted applications)
+        const { getAvailableGigs } = await import("@/lib/firebase/gigs");
+        const gigs = await getAvailableGigs(10);
         
         // Filter out user's own content and create feed items
         const videoFeedItems: FeedItem[] = (recentVideos as IVideo[])
@@ -79,7 +76,7 @@ export default function FeedPage() {
           }));
         
         // Create gig feed items
-        const gigFeedItems: FeedItem[] = (gigs as IGig[])
+        const gigFeedItems: FeedItem[] = gigs
           .slice(0, 5)
           .map(gig => ({
             id: `gig-${gig.id}`,
@@ -102,15 +99,8 @@ export default function FeedPage() {
           .slice(0, 4);
         setRecommendedBands(filteredRecommendedBands);
         
-        // Sort gigs by date and take the first 5
-        const sortedGigs = (gigs as IGig[])
-          .sort((a, b) => {
-            const dateA = convertToDate(a.date);
-            const dateB = convertToDate(b.date);
-            return dateA.getTime() - dateB.getTime();
-          })
-          .slice(0, 5);
-        setRecentGigs(sortedGigs);
+        // Take the first 5 available gigs (already sorted)
+        setRecentGigs(gigs.slice(0, 5));
         
         // Load recommended musicians
         const musicians = await queryDocuments("users", [

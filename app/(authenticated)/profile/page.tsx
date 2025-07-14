@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getDocumentById, queryDocuments } from "@/lib/firebase/firestore";
-import { getAcceptedGigs } from "@/lib/firebase/gigs";
+import { getUpcomingAcceptedGigs } from "@/lib/firebase/gigs";
 import { IUser, IGig } from "@/lib/types";
 import { IVideo } from "@/lib/types";
 import ProfileRouteHandler from "./route-handler";
@@ -45,17 +45,13 @@ export default function ProfilePage() {
         setTotalVideos(allVideos.length);
         setVideos(allVideos.slice(0, 3));
 
-        // Fetch following
-        if (userProfile.following && userProfile.following.length > 0) {
-          const followingPromises = userProfile.following
-            .slice(0, 4)
-            .map((userId) => getDocumentById("users", userId));
-          const followingResults = await Promise.all(followingPromises);
-          setFollowing(followingResults.filter(Boolean) as IUser[]);
-        }
+        // Fetch following users using the new method
+        const { getUserFollowing } = await import("@/lib/firebase/users");
+        const followingUsers = await getUserFollowing(userProfile.id);
+        setFollowing(followingUsers.slice(0, 4));
 
         // Fetch accepted gigs
-        const acceptedGigsData = await getAcceptedGigs(userProfile.id);
+        const acceptedGigsData = await getUpcomingAcceptedGigs(userProfile.id);
         setAcceptedGigs(acceptedGigsData);
       } catch (err) {
         console.error("Error fetching profile data:", err);
@@ -167,7 +163,9 @@ export default function ProfilePage() {
               href={`/profile/following`}
               className="text-center hover:text-purple-400 transition-colors"
             >
-              <div className="text-lg font-bold">{userProfile.following?.length || 0}</div>
+              <div className="text-lg font-bold">
+                {(userProfile.followingUsers?.length || 0) + (userProfile.followingBands?.length || 0) || userProfile.following?.length || 0}
+              </div>
               <div className="text-xs text-gray-400">Following</div>
             </Link>
           </div>
@@ -432,7 +430,7 @@ export default function ProfilePage() {
         <div className="px-4 bg-gray-800/30 p-5 rounded-2xl">
           <div className="flex justify-between items-center mb-4">
             <h2 className="font-bold text-lg">
-              Following - {userProfile.following?.length || 0}
+              Following - {userProfile.followingUsers?.length || userProfile.following?.length || 0}
             </h2>
             <Link
               href="/profile/following"

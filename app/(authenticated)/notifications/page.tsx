@@ -12,7 +12,7 @@ import {
   IBandInvitation, 
   IBandApplication, 
   InvitationStatus,
-  ApplicationStatus,
+  GigApplicationStatus,
   BandMemberRole 
 } from "@/lib/types";
 import { Button } from "@/components/ui/button";

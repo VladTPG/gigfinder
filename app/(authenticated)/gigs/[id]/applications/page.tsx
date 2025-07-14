@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+
 import { useAuth } from "@/lib/context/auth-context-fix";
 import { getGig, getGigApplications, updateGigApplication } from "@/lib/firebase/gigs";
-import { IGig, IGigApplication, ApplicationStatus } from "@/lib/types";
+import { IGig, IGigApplication, GigApplicationStatus } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Check, X, Clock, User, MessageSquare, Calendar } from "lucide-react";
 import Link from "next/link";
-import Image from "next/image";
+
 import { use } from "react";
 
 export default function GigApplicationsPage({
@@ -19,7 +19,7 @@ export default function GigApplicationsPage({
   const unwrappedParams = use(params);
   const gigId = unwrappedParams.id;
   
-  const router = useRouter();
+
   const { userProfile } = useAuth();
 
   const [gig, setGig] = useState<IGig | null>(null);
@@ -67,7 +67,7 @@ export default function GigApplicationsPage({
 
   const handleApplicationResponse = async (
     applicationId: string,
-    status: ApplicationStatus,
+    status: GigApplicationStatus,
     responseMessage?: string
   ) => {
     setProcessingApplications(prev => new Set(prev).add(applicationId));
@@ -95,19 +95,6 @@ export default function GigApplicationsPage({
         newSet.delete(applicationId);
         return newSet;
       });
-    }
-  };
-
-  const getStatusColor = (status: ApplicationStatus) => {
-    switch (status) {
-      case ApplicationStatus.PENDING:
-        return "bg-yellow-100 text-yellow-800 border-yellow-200";
-      case ApplicationStatus.ACCEPTED:
-        return "bg-green-100 text-green-800 border-green-200";
-      case ApplicationStatus.REJECTED:
-        return "bg-red-100 text-red-800 border-red-200";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
     }
   };
 
@@ -148,9 +135,9 @@ export default function GigApplicationsPage({
     );
   }
 
-  const pendingApplications = applications.filter(app => app.status === ApplicationStatus.PENDING);
-  const acceptedApplications = applications.filter(app => app.status === ApplicationStatus.ACCEPTED);
-  const rejectedApplications = applications.filter(app => app.status === ApplicationStatus.REJECTED);
+  const pendingApplications = applications.filter(app => app.status === GigApplicationStatus.PENDING);
+  const acceptedApplications = applications.filter(app => app.status === GigApplicationStatus.ACCEPTED);
+  const rejectedApplications = applications.filter(app => app.status === GigApplicationStatus.REJECTED);
 
   return (
     <div className="min-h-screen text-white p-3 md:p-4 max-w-7xl mx-auto space-y-6">
@@ -276,7 +263,7 @@ export default function GigApplicationsPage({
 
 interface ApplicationCardProps {
   application: IGigApplication;
-  onRespond: (id: string, status: ApplicationStatus, message?: string) => void;
+  onRespond: (id: string, status: GigApplicationStatus, message?: string) => void;
   isProcessing: boolean;
   showActions?: boolean;
 }
@@ -286,24 +273,24 @@ function ApplicationCard({ application, onRespond, isProcessing, showActions = t
   const [responseMessage, setResponseMessage] = useState("");
 
   const handleAccept = () => {
-    onRespond(application.id, ApplicationStatus.ACCEPTED, responseMessage.trim() || undefined);
+    onRespond(application.id, GigApplicationStatus.ACCEPTED, responseMessage.trim() || undefined);
     setShowResponseForm(false);
     setResponseMessage("");
   };
 
   const handleReject = () => {
-    onRespond(application.id, ApplicationStatus.REJECTED, responseMessage.trim() || undefined);
+    onRespond(application.id, GigApplicationStatus.REJECTED, responseMessage.trim() || undefined);
     setShowResponseForm(false);
     setResponseMessage("");
   };
 
-  const getStatusColor = (status: ApplicationStatus) => {
+  const getStatusColor = (status: GigApplicationStatus) => {
     switch (status) {
-      case ApplicationStatus.PENDING:
+      case GigApplicationStatus.PENDING:
         return "bg-yellow-100 text-yellow-800 border-yellow-200";
-      case ApplicationStatus.ACCEPTED:
+      case GigApplicationStatus.ACCEPTED:
         return "bg-green-100 text-green-800 border-green-200";
-      case ApplicationStatus.REJECTED:
+      case GigApplicationStatus.REJECTED:
         return "bg-red-100 text-red-800 border-red-200";
       default:
         return "bg-gray-100 text-gray-800 border-gray-200";
@@ -372,13 +359,13 @@ function ApplicationCard({ application, onRespond, isProcessing, showActions = t
           )}
 
           {/* Actions */}
-          {showActions && application.status === ApplicationStatus.PENDING && (
+          {showActions && application.status === GigApplicationStatus.PENDING && (
             <div className="space-y-3">
               {!showResponseForm ? (
                 <div className="flex gap-2">
                   <Button
                     size="sm"
-                    onClick={() => onRespond(application.id, ApplicationStatus.ACCEPTED)}
+                    onClick={() => onRespond(application.id, GigApplicationStatus.ACCEPTED)}
                     disabled={isProcessing}
                     className="bg-green-600 hover:bg-green-700"
                   >
@@ -396,7 +383,7 @@ function ApplicationCard({ application, onRespond, isProcessing, showActions = t
                   <Button
                     size="sm"
                     variant="destructive"
-                    onClick={() => onRespond(application.id, ApplicationStatus.REJECTED)}
+                    onClick={() => onRespond(application.id, GigApplicationStatus.REJECTED)}
                     disabled={isProcessing}
                   >
                     <X className="h-4 w-4 mr-1" />

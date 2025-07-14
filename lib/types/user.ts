@@ -33,7 +33,9 @@ export interface IUser {
   role: UserRole;
   profile: IProfile | IManagerProfile;
   followers: string[]; // Array of user IDs
-  following: string[]; // Array of user IDs
+  following: string[]; // Array of user IDs (deprecated - use followingUsers)
+  followingUsers: string[]; // Array of user IDs
+  followingBands: string[]; // Array of band IDs
   videos: string[]; // Array of video IDs
   bands: string[]; // Array of band IDs user is member of
   bandInvitations: string[]; // Array of pending invitation IDs
