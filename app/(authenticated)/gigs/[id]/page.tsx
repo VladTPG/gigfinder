@@ -88,9 +88,9 @@ export default function GigDetailPage() {
         const bands = await getUserBands(userProfile.id);
         setUserBands(bands);
         
-        // Check for band applications where user is a member
+        // Check for band applications where user is the band leader
         const bandApplications = applicationsList.filter(
-          (app) => app.applicantType === "band" && bands.some(band => band.id === app.applicantId)
+          (app) => app.applicantType === "band" && app.applicantId === userProfile.id
         );
         
         setUserApplication(personalApplication || null);
@@ -141,11 +141,12 @@ export default function GigDetailPage() {
     try {
       const applicationData = {
         gigId: gig.id,
-        applicantId: selectedBand.id,
+        applicantId: selectedBand.createdBy, // Use band leader's ID instead of band ID
         applicantType: "band" as const,
         applicantName: selectedBand.name,
         message: applicationMessage.trim() || undefined,
         status: ApplicationStatus.PENDING,
+        bandId: selectedBand.id, // Store band ID separately for reference
       };
 
       await createGigApplication(applicationData);
@@ -263,7 +264,7 @@ export default function GigDetailPage() {
 
   const canApply = userProfile?.role === "musician" && !userApplication && gig.status === "published";
   const canApplyWithBand = userProfile?.role === "musician" && userBands.length > 0 && 
-    !bandApplications.some(app => userBands.some(band => band.id === app.applicantId)) && gig.status === "published";
+    !bandApplications.some(app => app.applicantId === userProfile.id) && gig.status === "published";
   const isVenueManager =
     userProfile?.role === "manager" && userProfile.id === gig.createdBy;
 
@@ -626,7 +627,7 @@ export default function GigDetailPage() {
                 >
                   <option value="">Choose a band...</option>
                   {userBands
-                    .filter(band => !bandApplications.some(app => app.applicantId === band.id))
+                    .filter(band => band.createdBy === userProfile?.id && !bandApplications.some(app => app.applicantId === userProfile.id))
                     .map((band) => (
                       <option key={band.id} value={band.id}>
                         {band.name}
@@ -754,7 +755,7 @@ export default function GigDetailPage() {
                       
                       <Link href={
                         application.applicantType === "band" 
-                          ? `/bands/${application.applicantId}` 
+                          ? `/bands/${application.bandId}` 
                           : `/musician/${application.applicantId}`
                       }>
                         <Button size="sm" variant="ghost">

@@ -118,7 +118,7 @@ export interface RecurringPattern {
 export interface IGigApplication {
   id: string; // Firestore document ID
   gigId: string;
-  applicantId: string; // Band or musician ID
+  applicantId: string; // Band leader's ID (for band applications) or musician ID (for individual applications)
   applicantType: "musician" | "band";
   applicantName: string; // Denormalized for easier display
   message?: string; // Optional application message
@@ -126,4 +126,5 @@ export interface IGigApplication {
   appliedAt: typeof serverTimestamp;
   respondedAt?: typeof serverTimestamp;
   responseMessage?: string; // Optional response from venue manager
+  bandId?: string; // Band ID (only for band applications)
 }

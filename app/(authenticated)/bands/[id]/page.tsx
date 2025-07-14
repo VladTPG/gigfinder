@@ -144,8 +144,7 @@ export default function BandProfilePage({
         applicationInstruments,
         applicationMessage || undefined
       );
-      
-      alert("Application submitted successfully!");
+
       setShowApplicationDialog(false);
       resetApplicationForm();
     } catch (error: any) {
