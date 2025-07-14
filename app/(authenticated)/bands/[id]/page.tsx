@@ -478,37 +478,30 @@ export default function BandProfilePage({
         </div>
 
         {/* Videos Section */}
-        <div className="bg-gradient-to-br from-gray-800/50 via-gray-800/30 to-gray-900/50 p-4 sm:p-5 lg:p-6 rounded-2xl border border-gray-700/50 backdrop-blur-sm">
-          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4 mb-4 sm:mb-5">
-            <div className="flex items-center justify-center sm:justify-start gap-3">
-              <span className="text-lg sm:text-xl">🎥</span>
-              <h2 className="text-lg sm:text-xl font-bold">Band Videos</h2>
-              <span className="bg-red-600 text-white px-2 py-1 rounded-full text-xs sm:text-sm font-bold">
-                {band.videos.length}
-              </span>
-            </div>
-            {canManage(BandPermission.MANAGE_VIDEOS) && (
-              <Link
-                href={`/bands/${bandId}/videos`}
-                className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-lg hover:shadow-purple-500/25 flex items-center gap-2 w-fit mx-auto sm:mx-0 min-h-[44px] touch-manipulation"
-              >
-                <span>🎬</span>
-                <span className="hidden xs:inline">Manage Videos</span>
-                <span className="xs:hidden">Videos</span>
-              </Link>
-            )}
+        <div className="bg-gray-800/30 p-5 rounded-2xl">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="font-bold text-lg">
+              Band Videos - {band.videos.length}
+            </h2>
+            <Link
+              href={`/bands/${bandId}/videos`}
+              className="text-sm text-gray-400 hover:text-purple-400 transition-colors"
+            >
+              View all
+            </Link>
           </div>
           
-          {recentVideos.length > 0 ? (
-            <div>
-              {/* Video Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4 mb-6">
-                {recentVideos.map((video) => (
-                  <div key={video.id} className="bg-gradient-to-br from-gray-700/50 to-gray-800/50 rounded-xl overflow-hidden border border-gray-600/50 hover:border-purple-500/50 transition-all duration-300 transform hover:scale-105 hover:shadow-lg hover:shadow-purple-500/20">
-                    {/* Video Thumbnail */}
-                    <div className="relative aspect-video bg-gray-900">
+          <div className="grid grid-cols-3 gap-2">
+            {recentVideos.length > 0 ? (
+              recentVideos.map((video) => (
+                <div key={video.id} className="relative">
+                  <button
+                    onClick={() => setSelectedVideo(video)}
+                    className="aspect-video bg-gray-800 rounded-md overflow-hidden relative w-full hover:ring-2 hover:ring-purple-500 transition-all group"
+                  >
+                    {video.youtubeId ? (
                       <Image
-                        src={video.youtubeId ? getYouTubeThumbnail(video.youtubeId) : video.thumbnailUrl}
+                        src={getYouTubeThumbnail(video.youtubeId)}
                         alt={video.title}
                         fill
                         className="object-cover"
@@ -523,58 +516,74 @@ export default function BandProfilePage({
                           }
                         }}
                       />
-                      <button
-                        onClick={() => setSelectedVideo(video)}
-                        className="absolute inset-0 flex items-center justify-center bg-black/50 hover:bg-black/30 transition-colors group cursor-pointer"
-                      >
-                        <div className="w-10 h-10 sm:w-12 sm:h-12 bg-red-600 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
-                          <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white ml-1" viewBox="0 0 24 24" fill="currentColor">
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <span className="text-2xl">🎵</span>
+                      </div>
+                    )}
+                    {/* YouTube play button overlay */}
+                    {video.isYouTube && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/50 transition-colors">
+                        <div className="w-8 h-8 bg-red-600 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                          <svg className="w-4 h-4 text-white ml-0.5" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M8 5v14l11-7z"/>
                           </svg>
                         </div>
-                      </button>
-                    </div>
+                      </div>
+                    )}
+                  </button>
+                  <p className="text-xs mt-1 truncate">{video.title}</p>
+                  
+                  {/* Show genre and instrument tags with better separation */}
+                  <div className="space-y-1 mt-2">
+                    {/* Genre tags */}
+                    {video.genres && video.genres.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        <div className="flex items-center gap-1">
+                          <span className="text-purple-400 text-xs font-medium">Genres:</span>
+                          {video.genres.slice(0, 2).map(genre => (
+                            <span key={genre} className="px-1 py-0.5 bg-purple-600/30 text-purple-300 text-xs rounded">
+                              {genre}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     
-                    {/* Video Info */}
-                    <div className="p-3">
-                      <h4 className="font-semibold text-sm mb-1 line-clamp-2 leading-tight">{video.title}</h4>
-                      {video.description && (
-                        <p className="text-gray-400 text-xs line-clamp-2 leading-relaxed">{video.description}</p>
-                      )}
-                    </div>
+                    {/* Instrument tags */}
+                    {video.instruments && video.instruments.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        <div className="flex items-center gap-1">
+                          <span className="text-blue-400 text-xs font-medium">Instruments:</span>
+                          {video.instruments.slice(0, 2).map(instrument => (
+                            <span key={instrument} className="px-1 py-0.5 bg-blue-600/30 text-blue-300 text-xs rounded">
+                              {instrument}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ))}
+                </div>
+              ))
+            ) : (
+              <div className="col-span-3 flex flex-col items-center justify-center py-10 text-center">
+                <div className="text-4xl mb-3">🎵</div>
+                <p className="text-gray-400">No videos posted yet.</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  Add YouTube videos to showcase the band's talent
+                </p>
+                {canManage(BandPermission.MANAGE_VIDEOS) && (
+                  <Link
+                    href={`/bands/${bandId}/videos`}
+                    className="mt-3 text-xs bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded transition-colors"
+                  >
+                    Add Videos
+                  </Link>
+                )}
               </div>
-              
-              {/* View All Button */}
-              <div className="text-center">
-                <Link
-                  href={`/bands/${bandId}/videos`}
-                  className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 px-4 py-3 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-lg hover:shadow-purple-500/25 inline-flex items-center gap-2 text-sm sm:text-base min-h-[44px] touch-manipulation"
-                >
-                  <span>🎥</span>
-                  View All {band.videos.length} Videos
-                </Link>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-8 sm:py-12">
-              <div className="text-4xl sm:text-6xl mb-4 animate-bounce">🎵</div>
-              <h3 className="text-lg sm:text-xl font-bold mb-2 text-gray-200">No videos posted yet</h3>
-              <p className="text-gray-400 mb-6 text-sm sm:text-base max-w-md mx-auto leading-relaxed px-4">
-                Start showcasing your band's talent by adding your first video
-              </p>
-              {canManage(BandPermission.MANAGE_VIDEOS) && (
-                <Link
-                  href={`/bands/${bandId}/videos/add`}
-                  className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 px-6 py-3 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-lg hover:shadow-purple-500/25 inline-flex items-center gap-2 text-sm sm:text-base min-h-[44px] touch-manipulation"
-                >
-                  <span className="text-lg">🎬</span>
-                  Add First Video
-                </Link>
-              )}
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Accepted Gigs section */}

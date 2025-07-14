@@ -257,7 +257,7 @@ export default function BandVideosPage({
           {canManageVideos() && (
             <button
               onClick={() => setShowAddForm(!showAddForm)}
-              className="bg-gray-600 text-sm rounded-full px-4 py-1 hover:bg-gray-700 hover:shadow-center-glow transition-all duration-300"
+              className="text-sm text-gray-400 hover:text-purple-400 transition-colors"
             >
               {showAddForm ? "Cancel" : "Add Video"}
             </button>
@@ -413,7 +413,7 @@ export default function BandVideosPage({
                 </button>
                 <p className="text-xs mt-1 truncate">{video.title}</p>
                 
-                {/* Show genre and instrument tags */}
+                {/* Show genre and instrument tags with better separation */}
                 <div className="space-y-1 mt-2">
                   {/* Genre tags */}
                   {video.genres && video.genres.length > 0 && (
