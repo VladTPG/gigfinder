@@ -25,7 +25,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 // Select components not needed - using native HTML select
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Dialog, 
@@ -254,12 +253,8 @@ export default function BandMembersPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-3 md:p-4">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>
-          </div>
-        </div>
+      <div className="min-h-screen text-white flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
       </div>
     );
   }
@@ -269,21 +264,21 @@ export default function BandMembersPage() {
   const activeMembers = band.members.filter(member => member.isActive);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white p-3 md:p-4">
-      <div className="max-w-6xl mx-auto space-y-4 md:space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div className="min-h-screen text-white p-3 md:p-4 max-w-7xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="bg-gradient-to-br from-purple-900/50 via-gray-800/50 to-blue-900/50 p-4 sm:p-5 lg:p-6 rounded-2xl border border-gray-700/50">
+        <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => router.push(`/bands/${bandId}`)}
-              className="p-2"
+              className="p-2 hover:bg-gray-700/50"
             >
               <ArrowLeft className="w-4 h-4" />
             </Button>
             <div>
-              <h1 className="text-xl md:text-2xl font-bold text-white">
+              <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
                 {band.name} Members
               </h1>
               <p className="text-sm text-gray-300">
@@ -294,7 +289,7 @@ export default function BandMembersPage() {
 
           <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white">
+              <Button className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white transition-all duration-300 transform hover:scale-105">
                 <UserPlus className="w-4 h-4 mr-2" />
                 Invite Member
               </Button>
@@ -419,7 +414,7 @@ export default function BandMembersPage() {
                   {inviteInstruments.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {inviteInstruments.map((instrument) => (
-                        <Badge key={instrument} variant="secondary" className="text-xs bg-gray-600 text-gray-200">
+                        <Badge key={instrument} variant="secondary" className="text-xs bg-purple-600/30 text-purple-300">
                           {instrument}
                         </Badge>
                       ))}
@@ -456,7 +451,7 @@ export default function BandMembersPage() {
                   <Button
                     variant="outline"
                     onClick={() => setInviteDialogOpen(false)}
-                    className="flex-1"
+                    className="flex-1 border-gray-600 text-gray-300 hover:bg-gray-700"
                   >
                     Cancel
                   </Button>
@@ -465,21 +460,23 @@ export default function BandMembersPage() {
             </DialogContent>
           </Dialog>
         </div>
+      </div>
 
-        {/* Content */}
+      {/* Content */}
+      <div className="bg-gradient-to-br from-gray-800/50 via-gray-800/30 to-gray-900/50 p-4 sm:p-5 lg:p-6 rounded-2xl border border-gray-700/50 backdrop-blur-sm">
         <Tabs defaultValue="members" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-2 bg-gray-800 border border-gray-700">
-            <TabsTrigger value="members" className="flex items-center gap-2 text-gray-300 data-[state=active]:bg-gray-700 data-[state=active]:text-white">
+          <TabsList className="grid w-full grid-cols-2 bg-gray-800/50 border border-gray-700/50">
+            <TabsTrigger value="members" className="flex items-center gap-2 text-gray-300 data-[state=active]:bg-purple-600/20 data-[state=active]:text-purple-300 data-[state=active]:border-purple-500/30">
               <Users className="w-4 h-4" />
               <span className="hidden sm:inline">Current Members</span>
               <span className="sm:hidden">Members</span>
-              <Badge variant="secondary" className="bg-gray-600 text-gray-200">{activeMembers.length}</Badge>
+              <Badge variant="secondary" className="bg-purple-600/30 text-purple-300">{activeMembers.length}</Badge>
             </TabsTrigger>
-            <TabsTrigger value="applications" className="flex items-center gap-2 text-gray-300 data-[state=active]:bg-gray-700 data-[state=active]:text-white">
+            <TabsTrigger value="applications" className="flex items-center gap-2 text-gray-300 data-[state=active]:bg-blue-600/20 data-[state=active]:text-blue-300 data-[state=active]:border-blue-500/30">
               <Clock className="w-4 h-4" />
               <span className="hidden sm:inline">Applications</span>
               <span className="sm:hidden">Apps</span>
-              <Badge variant="secondary" className="bg-gray-600 text-gray-200">{applications.length}</Badge>
+              <Badge variant="secondary" className="bg-blue-600/30 text-blue-300">{applications.length}</Badge>
             </TabsTrigger>
           </TabsList>
 
@@ -492,57 +489,56 @@ export default function BandMembersPage() {
                 const avatarLetter = memberProfile?.profile.username?.charAt(0).toUpperCase() || member.userId.charAt(0).toUpperCase();
                 
                 return (
-                  <Card key={member.userId} className="hover:shadow-md transition-shadow bg-gray-800 border-gray-700">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          {memberProfile?.profile.profilePicture ? (
-                            <img
-                              src={memberProfile.profile.profilePicture}
-                              alt={displayName}
-                              className="w-10 h-10 rounded-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 bg-gradient-to-r from-purple-400 to-blue-400 rounded-full flex items-center justify-center text-white font-medium">
-                              {avatarLetter}
+                  <div key={member.userId} className="bg-gradient-to-br from-gray-800/50 via-gray-800/30 to-gray-900/50 p-4 rounded-2xl border border-gray-700/50 hover:border-purple-500/30 transition-all duration-300">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {memberProfile?.profile.profilePicture ? (
+                          <img
+                            src={memberProfile.profile.profilePicture}
+                            alt={displayName}
+                            className="w-12 h-12 rounded-xl object-cover border border-gray-600/50"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 bg-gradient-to-r from-purple-400 to-blue-400 rounded-xl flex items-center justify-center text-white font-medium border border-gray-600/50">
+                            {avatarLetter}
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-bold text-sm md:text-base truncate text-white">
+                              {displayName}
+                            </span>
+                            {getRoleIcon(member.role)}
+                            <Badge variant="outline" className="text-xs border-purple-500/30 text-purple-300 bg-purple-600/20">
+                              {member.role}
+                            </Badge>
+                          </div>
+                          {memberProfile?.profile.firstName && memberProfile?.profile.lastName && (
+                            <div className="text-xs text-gray-400 mb-2">
+                              {memberProfile.profile.firstName} {memberProfile.profile.lastName}
                             </div>
                           )}
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-sm md:text-base truncate text-white">
-                                {displayName}
-                              </span>
-                              {getRoleIcon(member.role)}
-                              <Badge variant="outline" className="text-xs border-gray-600 text-gray-300">
-                                {member.role}
+                          <div className="flex flex-wrap gap-1">
+                            {member.instruments.slice(0, 3).map((instrument) => (
+                              <Badge key={instrument} variant="secondary" className="text-xs bg-blue-600/30 text-blue-300">
+                                {instrument}
                               </Badge>
-                            </div>
-                            {memberProfile?.profile.firstName && memberProfile?.profile.lastName && (
-                              <div className="text-xs text-gray-400 mt-0.5">
-                                {memberProfile.profile.firstName} {memberProfile.profile.lastName}
-                              </div>
+                            ))}
+                            {member.instruments.length > 3 && (
+                              <Badge variant="secondary" className="text-xs bg-blue-600/30 text-blue-300">
+                                +{member.instruments.length - 3}
+                              </Badge>
                             )}
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {member.instruments.slice(0, 3).map((instrument) => (
-                                <Badge key={instrument} variant="secondary" className="text-xs bg-gray-600 text-gray-200">
-                                  {instrument}
-                                </Badge>
-                              ))}
-                              {member.instruments.length > 3 && (
-                                <Badge variant="secondary" className="text-xs bg-gray-600 text-gray-200">
-                                  +{member.instruments.length - 3}
-                                </Badge>
-                              )}
-                            </div>
                           </div>
                         </div>
-                      
+                      </div>
+                    
                       <div className="flex items-center gap-1">
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => handleViewProfile(member.userId)}
-                          className="text-blue-400 hover:text-blue-300 hover:bg-blue-900/20 p-2"
+                          className="text-blue-400 hover:text-blue-300 hover:bg-blue-900/20 p-2 transition-all duration-300"
                           title="View Profile"
                         >
                           <ExternalLink className="w-4 h-4" />
@@ -552,7 +548,7 @@ export default function BandMembersPage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => handleRemoveMember(member.userId)}
-                            className="text-red-400 hover:text-red-300 hover:bg-red-900/20 p-2"
+                            className="text-red-400 hover:text-red-300 hover:bg-red-900/20 p-2 transition-all duration-300"
                             title="Remove Member"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -560,8 +556,7 @@ export default function BandMembersPage() {
                         )}
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
                 );
               })}
             </div>
@@ -570,84 +565,80 @@ export default function BandMembersPage() {
           {/* Applications */}
           <TabsContent value="applications" className="space-y-4">
             {applications.length === 0 ? (
-              <Card className="bg-gray-800 border-gray-700">
-                <CardContent className="p-8 text-center">
-                  <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-white mb-2">No Applications</h3>
-                  <p className="text-gray-300">No pending applications at the moment.</p>
-                </CardContent>
-              </Card>
+              <div className="bg-gradient-to-br from-gray-800/50 via-gray-800/30 to-gray-900/50 p-8 rounded-2xl border border-gray-700/50 text-center">
+                <Clock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-bold text-white mb-2">No Applications</h3>
+                <p className="text-gray-300">No pending applications at the moment.</p>
+              </div>
             ) : (
               <div className="grid gap-3 md:gap-4">
                 {applications.map((application) => (
-                  <Card key={application.id} className="hover:shadow-md transition-shadow bg-gray-800 border-gray-700">
-                    <CardContent className="p-4">
-                      <div className="space-y-3">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-3 min-w-0 flex-1">
-                            <div className="w-10 h-10 bg-gradient-to-r from-green-400 to-blue-400 rounded-full flex items-center justify-center text-white font-medium">
-                              {application.applicantName.charAt(0).toUpperCase()}
+                  <div key={application.id} className="bg-gradient-to-br from-gray-800/50 via-gray-800/30 to-gray-900/50 p-4 rounded-2xl border border-gray-700/50 hover:border-green-500/30 transition-all duration-300">
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="w-12 h-12 bg-gradient-to-r from-green-400 to-blue-400 rounded-xl flex items-center justify-center text-white font-medium border border-gray-600/50">
+                            {application.applicantName.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-bold text-sm md:text-base truncate text-white">
+                                {application.applicantName}
+                              </span>
+                              {getRoleIcon(application.role)}
+                              <Badge variant="outline" className="text-xs border-green-500/30 text-green-300 bg-green-600/20">
+                                {application.role}
+                              </Badge>
                             </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium text-sm md:text-base truncate text-white">
-                                  {application.applicantName}
-                                </span>
-                                {getRoleIcon(application.role)}
-                                <Badge variant="outline" className="text-xs border-gray-600 text-gray-300">
-                                  {application.role}
+                            <div className="flex flex-wrap gap-1">
+                              {application.instruments.map((instrument) => (
+                                <Badge key={instrument} variant="secondary" className="text-xs bg-blue-600/30 text-blue-300">
+                                  {instrument}
                                 </Badge>
-                              </div>
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {application.instruments.map((instrument) => (
-                                  <Badge key={instrument} variant="secondary" className="text-xs bg-gray-600 text-gray-200">
-                                    {instrument}
-                                  </Badge>
-                                ))}
-                              </div>
+                              ))}
                             </div>
-                          </div>
-                        </div>
-
-                        {application.message && (
-                          <div className="bg-gray-700 p-3 rounded-lg border border-gray-600">
-                            <p className="text-sm text-gray-300">{application.message}</p>
-                          </div>
-                        )}
-
-                        <div className="flex flex-col sm:flex-row gap-2">
-                          <Button
-                            onClick={() => handleViewProfile(application.applicantUserId)}
-                            variant="outline"
-                            size="sm"
-                            className="flex-1 text-blue-400 border-blue-600 hover:bg-blue-900/20"
-                          >
-                            <ExternalLink className="w-4 h-4 mr-2" />
-                            View Profile
-                          </Button>
-                          <div className="flex gap-2 flex-1">
-                            <Button
-                              onClick={() => handleAcceptApplication(application.id)}
-                              size="sm"
-                              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-                            >
-                              <Check className="w-4 h-4 mr-2" />
-                              Accept
-                            </Button>
-                            <Button
-                              onClick={() => handleDeclineApplication(application.id)}
-                              variant="outline"
-                              size="sm"
-                              className="flex-1 text-red-400 border-red-600 hover:bg-red-900/20"
-                            >
-                              <X className="w-4 h-4 mr-2" />
-                              Decline
-                            </Button>
                           </div>
                         </div>
                       </div>
-                    </CardContent>
-                  </Card>
+
+                      {application.message && (
+                        <div className="bg-gray-700/50 p-3 rounded-xl border border-gray-600/50">
+                          <p className="text-sm text-gray-300">{application.message}</p>
+                        </div>
+                      )}
+
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Button
+                          onClick={() => handleViewProfile(application.applicantUserId)}
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 text-blue-400 border-blue-600/50 hover:bg-blue-900/20 transition-all duration-300"
+                        >
+                          <ExternalLink className="w-4 h-4 mr-2" />
+                          View Profile
+                        </Button>
+                        <div className="flex gap-2 flex-1">
+                          <Button
+                            onClick={() => handleAcceptApplication(application.id)}
+                            size="sm"
+                            className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white transition-all duration-300 transform hover:scale-105"
+                          >
+                            <Check className="w-4 h-4 mr-2" />
+                            Accept
+                          </Button>
+                          <Button
+                            onClick={() => handleDeclineApplication(application.id)}
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 text-red-400 border-red-600/50 hover:bg-red-900/20 transition-all duration-300"
+                          >
+                            <X className="w-4 h-4 mr-2" />
+                            Decline
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
             )}

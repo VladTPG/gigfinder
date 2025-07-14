@@ -14,6 +14,7 @@ import { getYouTubeThumbnail } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FollowButton } from "@/components/ui/follow-button";
+import VideoPlayer from "@/components/VideoPlayer";
 
 export default function BandProfilePage({
   params,
@@ -32,6 +33,7 @@ export default function BandProfilePage({
   const [acceptedGigs, setAcceptedGigs] = useState<IGig[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<IVideo | null>(null);
   
   // Application state
   const [showApplicationDialog, setShowApplicationDialog] = useState(false);
@@ -74,7 +76,13 @@ export default function BandProfilePage({
         const memberResults = await Promise.all(memberPromises);
         const validMembers = memberResults.filter(Boolean) as any[];
         
-        // Debug logging to check member data
+        // Debug logging to check band and member data
+        console.log("Band data:", {
+          id: bandData.id,
+          name: bandData.name,
+          profilePicture: bandData.profilePicture,
+          hasProfilePicture: !!bandData.profilePicture
+        });
         console.log("Band members data:", validMembers.map(member => ({
           id: member.id,
           username: member.profile.username,
@@ -203,6 +211,15 @@ export default function BandProfilePage({
                   width={144}
                   height={144}
                   className="w-full h-full object-cover"
+                  onError={(e) => {
+                    console.error("Error loading band profile picture:", band.profilePicture);
+                    const target = e.target as HTMLImageElement;
+                    target.onerror = null; // Prevent infinite error loop
+                    target.style.display = 'none';
+                  }}
+                  onLoad={() => {
+                    console.log("Band profile picture loaded successfully:", band.profilePicture);
+                  }}
                 />
               ) : (
                 <div className="text-3xl sm:text-4xl lg:text-5xl">🎵</div>
@@ -515,13 +532,16 @@ export default function BandProfilePage({
                           }
                         }}
                       />
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/50 hover:bg-black/30 transition-colors group cursor-pointer">
+                      <button
+                        onClick={() => setSelectedVideo(video)}
+                        className="absolute inset-0 flex items-center justify-center bg-black/50 hover:bg-black/30 transition-colors group cursor-pointer"
+                      >
                         <div className="w-10 h-10 sm:w-12 sm:h-12 bg-red-600 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
                           <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white ml-1" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M8 5v14l11-7z"/>
                           </svg>
                         </div>
-                      </div>
+                      </button>
                     </div>
                     
                     {/* Video Info */}
@@ -768,6 +788,13 @@ export default function BandProfilePage({
             </div>
           </div>
         )}
+
+        {/* Video Player Modal */}
+        <VideoPlayer 
+          video={selectedVideo}
+          isOpen={!!selectedVideo}
+          onClose={() => setSelectedVideo(null)}
+        />
     </div>
   );
 } 

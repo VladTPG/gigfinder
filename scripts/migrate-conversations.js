@@ -1,13 +1,6 @@
-// Migration script to create conversations for existing accepted applications
-// Run this once to migrate all existing accepted applications to have conversations
-
 const { initializeApp } = require('firebase/app');
 const { getFirestore, collection, query, where, getDocs, addDoc, serverTimestamp } = require('firebase/firestore');
 
-// Firebase config - replace with your actual config
-const firebaseConfig = {
-  // Add your Firebase config here
-};
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);

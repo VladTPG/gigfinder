@@ -12,6 +12,8 @@ interface AuthContextType {
   userProfile: IUser | null;
   isLoading: boolean;
   error: string | null;
+  authInitialized: boolean;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -19,6 +21,8 @@ const AuthContext = createContext<AuthContextType>({
   userProfile: null,
   isLoading: true,
   error: null,
+  authInitialized: false,
+  refreshProfile: async () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -28,6 +32,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userProfile, setUserProfile] = useState<IUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [authInitialized, setAuthInitialized] = useState(false);
 
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
@@ -126,7 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           location: "",
           profilePicture: user.photoURL || "",
         },
-        role: "MUSICIAN",
+        role: null, // Set to null to ensure user goes through profile setup
         followers: [],
         following: [],
         videos: [],
@@ -174,58 +179,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw lastError;
     };
 
-    // Check if there's a user already logged in
-    const currentUser = getCurrentUser();
-    console.log("Current user from Firebase:", currentUser?.email || "None");
+    // Don't try to get current user synchronously - let onAuthChange handle it
+    // This prevents the race condition where getCurrentUser() returns null before Firebase auth initializes
+    console.log("Auth provider will wait for onAuthChange to determine auth state");
 
-    if (currentUser) {
-      setUser(currentUser);
-
-      // Fetch user profile from Firestore with retry
-      const loadProfile = async () => {
-        try {
-          const profile = await fetchProfileWithRetry(currentUser.uid);
-
-          if (!isMounted) return;
-
-          if (profile) {
-            setUserProfile(profile);
-            setError(null);
-          } else {
-            // Use a fallback profile if none exists
-            const fallback = createFallbackProfile(currentUser);
-            setUserProfile(fallback);
-            setError(
-              "Your profile data couldn't be loaded. Using basic information from your account."
-            );
-          }
-        } catch (err: any) {
-          console.error("Final error fetching profile:", err);
-          if (isMounted) {
-            // Still provide a user experience by setting a fallback profile
-            const fallback = createFallbackProfile(currentUser);
-            setUserProfile(fallback);
-            setError(`Profile fetch error: ${err.message || "Unknown error"}`);
-          }
-        } finally {
-          if (isMounted) {
-            setIsLoading(false);
-          }
-        }
-      };
-
-      loadProfile();
-    } else {
-      console.log("No current user");
-      setIsLoading(false);
-    }
-
-    // Set up auth state change listener
+    // Set up auth state change listener - this is the primary way to handle auth state
     const unsubscribe = onAuthChange(async (authUser) => {
       if (!isMounted) return;
 
       console.log("Auth state changed:", authUser?.email || "signed out");
       setUser(authUser);
+      setAuthInitialized(true); // Mark auth as initialized after first callback
 
       if (authUser) {
         try {
@@ -296,8 +260,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, [user, userProfile, isLoading, error]);
 
+  // Function to manually refresh the user profile
+  const refreshProfile = async () => {
+    if (!user) {
+      console.warn("Cannot refresh profile: no authenticated user");
+      return;
+    }
+
+    console.log("Manually refreshing user profile");
+    setError(null);
+
+    try {
+      const profile = await getDocumentById<IUser>("users", user.uid);
+      if (profile) {
+        console.log("Profile refreshed successfully:", profile.email);
+        setUserProfile(profile);
+      } else {
+        console.warn("No profile found during manual refresh");
+        setError("Profile not found");
+      }
+    } catch (err: any) {
+      console.error("Error refreshing profile:", err);
+      setError(`Failed to refresh profile: ${err.message || "Unknown error"}`);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, userProfile, isLoading, error }}>
+    <AuthContext.Provider value={{ user, userProfile, isLoading, error, authInitialized, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

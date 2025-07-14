@@ -12,6 +12,7 @@ import {
 import { UserRole, IUser, IVenue } from "@/lib/types";
 import ProtectedRoute from "@/components/auth/protected-route";
 import { uploadFileToMinio } from "@/lib/minio";
+import { useAuth } from "@/lib/context/auth-context-fix";
 
 // Define instrument options
 const instrumentOptions = [
@@ -40,6 +41,7 @@ export default function ProfileSetupPage() {
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   const router = useRouter();
+  const { refreshProfile } = useAuth();
 
   useEffect(() => {
     // Check if user is authenticated and fetch their profile
@@ -210,6 +212,9 @@ export default function ProfileSetupPage() {
           "profile.location": venueLocation,
         });
       }
+
+      // Refresh the profile in auth context to get updated data
+      await refreshProfile();
 
       // Redirect to feed
       router.push("/feed");
@@ -556,6 +561,15 @@ export default function ProfileSetupPage() {
     }
   };
 
+  const getTotalSteps = () => {
+    if (selectedRole === UserRole.MUSICIAN) {
+      return 2; // Role selection + Instruments
+    } else if (selectedRole === UserRole.MANAGER) {
+      return 4; // Role selection + Venue info + Venue photos + Complete
+    }
+    return 4; // Default to 4 steps
+  };
+
   const getButtonText = () => {
     if (step === 1) {
       return "Next";
@@ -592,7 +606,7 @@ export default function ProfileSetupPage() {
 
           <div className="bg-card rounded-xl shadow-lg p-8">
             <h1 className="text-2xl font-bold text-center mb-6">
-              Profile Setup (Step {step}/4)
+              Profile Setup (Step {step}/{getTotalSteps()})
             </h1>
 
             {error && (

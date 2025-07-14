@@ -139,13 +139,15 @@ export const getGigs = async (
   }
 };
 
-// Get upcoming gigs (published and in the future, excluding filled gigs)
+// Get upcoming gigs (published and in the future)
 export const getUpcomingGigs = async (
   limitCount: number = 20
 ): Promise<IGig[]> => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
+    console.log("🔍 Getting upcoming gigs for date:", today);
 
     // Try the optimized query first
     try {
@@ -154,33 +156,28 @@ export const getUpcomingGigs = async (
         where("status", "==", GigStatus.PUBLISHED),
         where("date", ">=", today),
         orderBy("date", "asc"),
-        limit(limitCount * 2) // Get more to filter out filled gigs
+        limit(limitCount)
       );
 
       const querySnapshot = await getDocs(q);
+      console.log("🔍 Query returned", querySnapshot.docs.length, "gigs");
 
-      const allGigs = querySnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        date:
-          doc.data().date instanceof Timestamp
-            ? doc.data().date.toDate()
-            : doc.data().date,
-      })) as IGig[];
+      const allGigs = querySnapshot.docs.map((doc) => {
+        const data = doc.data();
+        console.log("🔍 Gig data:", { id: doc.id, title: data.title, date: data.date, status: data.status });
+        return {
+          id: doc.id,
+          ...data,
+          date:
+            data.date instanceof Timestamp
+              ? data.date.toDate()
+              : data.date,
+        };
+      }) as IGig[];
 
-      // Filter out gigs that have accepted applications
-      const availableGigs = [];
-      for (const gig of allGigs) {
-        const hasAccepted = await gigHasAcceptedApplications(gig.id);
-        if (!hasAccepted) {
-          availableGigs.push(gig);
-        }
-        if (availableGigs.length >= limitCount) {
-          break;
-        }
-      }
+      console.log("🔍 Processed gigs:", allGigs.length);
+      return allGigs;
 
-      return availableGigs;
     } catch (indexError) {
       console.warn(
         "Index not ready, falling back to simple query:",
@@ -191,7 +188,7 @@ export const getUpcomingGigs = async (
       const q = query(
         collection(db, GIGS_COLLECTION),
         where("status", "==", GigStatus.PUBLISHED),
-        limit(limitCount * 3) // Get more to ensure we have enough after filtering
+        limit(limitCount * 2)
       );
 
       const querySnapshot = await getDocs(q);
@@ -204,21 +201,13 @@ export const getUpcomingGigs = async (
             : doc.data().date,
       })) as IGig[];
 
-      // Filter by date and availability
-      const futureGigs = allGigs.filter((gig) => gig.date >= today);
-      const availableGigs = [];
-      
-      for (const gig of futureGigs) {
-        const hasAccepted = await gigHasAcceptedApplications(gig.id);
-        if (!hasAccepted) {
-          availableGigs.push(gig);
-        }
-        if (availableGigs.length >= limitCount) {
-          break;
-        }
-      }
+      // Filter by date and sort
+      const futureGigs = allGigs
+        .filter((gig) => gig.date >= today)
+        .sort((a, b) => a.date.getTime() - b.date.getTime())
+        .slice(0, limitCount);
 
-      return availableGigs.sort((a, b) => a.date.getTime() - b.date.getTime());
+      return futureGigs;
     }
   } catch (error) {
     console.error("Error getting upcoming gigs:", error);
@@ -269,10 +258,16 @@ export const getGigApplications = async (
 
     const querySnapshot = await getDocs(q);
 
-    return querySnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as IGigApplication[];
+    return querySnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        // Convert Firestore Timestamp to Date
+        appliedAt: data.appliedAt instanceof Timestamp ? data.appliedAt.toDate() : data.appliedAt,
+        respondedAt: data.respondedAt instanceof Timestamp ? data.respondedAt.toDate() : data.respondedAt,
+      };
+    }) as IGigApplication[];
   } catch (error) {
     console.error("Error getting gig applications:", error);
     throw error;
@@ -343,10 +338,16 @@ export const getUserGigApplications = async (
 
     const querySnapshot = await getDocs(q);
 
-    return querySnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as IGigApplication[];
+    return querySnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        // Convert Firestore Timestamp to Date
+        appliedAt: data.appliedAt instanceof Timestamp ? data.appliedAt.toDate() : data.appliedAt,
+        respondedAt: data.respondedAt instanceof Timestamp ? data.respondedAt.toDate() : data.respondedAt,
+      };
+    }) as IGigApplication[];
   } catch (error) {
     console.error("Error getting user gig applications:", error);
     throw error;
@@ -367,10 +368,16 @@ export const getAcceptedGigs = async (
     );
 
     const querySnapshot = await getDocs(q);
-    const acceptedApplications = querySnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as IGigApplication[];
+    const acceptedApplications = querySnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        // Convert Firestore Timestamp to Date
+        appliedAt: data.appliedAt instanceof Timestamp ? data.appliedAt.toDate() : data.appliedAt,
+        respondedAt: data.respondedAt instanceof Timestamp ? data.respondedAt.toDate() : data.respondedAt,
+      };
+    }) as IGigApplication[];
 
     // Get the gig details for each accepted application
     const gigPromises = acceptedApplications.map(async (application) => {
@@ -405,6 +412,49 @@ export const gigHasAcceptedApplications = async (gigId: string): Promise<boolean
   } catch (error) {
     console.error("Error checking gig accepted applications:", error);
     return false;
+  }
+};
+
+// Simple wrapper to apply to a gig (for musicians)
+export const applyToGig = async (gigId: string, userId: string, message?: string) => {
+  try {
+    // Get user data to determine applicant type and name
+    const userData = await getDocumentById("users", userId);
+    if (!userData || !('profile' in userData)) {
+      throw new Error("User not found");
+    }
+
+    const user = userData as any;
+    const profile = user.profile;
+    
+    let applicantName = "";
+    let applicantType: "musician" | "band" = "musician";
+
+    if (profile.firstName && profile.lastName) {
+      applicantName = `${profile.firstName} ${profile.lastName}`;
+    } else if (profile.username) {
+      applicantName = profile.username;
+    } else {
+      applicantName = "Unknown";
+    }
+
+    // For now, assuming individual musician applications
+    // In the future, this could be extended to handle band applications
+    applicantType = "musician";
+
+    const applicationData = {
+      gigId,
+      applicantId: userId,
+      applicantType,
+      applicantName,
+      status: GigApplicationStatus.PENDING,
+      message: message || "",
+    };
+
+    return await createGigApplication(applicationData);
+  } catch (error) {
+    console.error("Error applying to gig:", error);
+    throw error;
   }
 };
 

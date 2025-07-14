@@ -261,11 +261,13 @@ export default function GigDetailPage() {
     );
   }
 
-  const canApply = userProfile?.role === "musician" && !userApplication;
+  const canApply = userProfile?.role === "musician" && !userApplication && gig.status === "published";
   const canApplyWithBand = userProfile?.role === "musician" && userBands.length > 0 && 
-    !bandApplications.some(app => userBands.some(band => band.id === app.applicantId));
+    !bandApplications.some(app => userBands.some(band => band.id === app.applicantId)) && gig.status === "published";
   const isVenueManager =
     userProfile?.role === "manager" && userProfile.id === gig.createdBy;
+
+
 
   return (
     <main className="min-h-screen p-4 md:p-8">

@@ -111,8 +111,10 @@ export default function CreateBandPage() {
       let profilePictureUrl = "";
       if (profileImage) {
         try {
+          console.log("Uploading band profile image:", profileImage.name);
           const imagePath = `bands/profile-${Date.now()}.${profileImage.name.split(".").pop()}`;
           profilePictureUrl = await uploadFileToMinio(profileImage, imagePath);
+          console.log("Band profile image uploaded successfully:", profilePictureUrl);
         } catch (uploadError) {
           console.error("Error uploading band image:", uploadError);
           setError("Failed to upload band image. Please try again.");
@@ -153,7 +155,12 @@ export default function CreateBandPage() {
       };
 
       // Create the band
+      console.log("Creating band with data:", {
+        ...bandData,
+        profilePicture: bandData.profilePicture
+      });
       const bandId = await createBand(bandData, userProfile.id);
+      console.log("Band created successfully with ID:", bandId);
       
       // Redirect to the new band page
       router.push(`/bands/${bandId}`);

@@ -22,8 +22,30 @@ export default function SignInPage() {
     setIsLoading(true);
 
     try {
-      await signIn(email, password);
-      router.push("/feed");
+      const userCredential = await signIn(email, password);
+      const user = userCredential.user;
+      
+      // Give a moment for the auth context to update
+      setTimeout(async () => {
+        try {
+          // Check if user has completed profile setup
+          const userDoc = await getDocumentById<IUser>("users", user.uid);
+
+          if (!userDoc || !userDoc.role) {
+            // User hasn't set up their profile yet, redirect to profile setup
+            console.log("Email signin: Redirecting to profile-setup - no role found");
+            router.push("/profile-setup");
+          } else {
+            // User already has a role, go to feed
+            console.log("Email signin: Redirecting to feed - role found:", userDoc.role);
+            router.push("/feed");
+          }
+        } catch (fetchError) {
+          console.error("Error fetching user profile after email signin:", fetchError);
+          // If we can't fetch the profile, assume they need to set it up
+          router.push("/profile-setup");
+        }
+      }, 500);
     } catch (err: Error | unknown) {
       console.error("Sign in error:", err);
       const errorMessage =
@@ -31,7 +53,6 @@ export default function SignInPage() {
           ? err.message
           : "Failed to sign in. Please check your credentials.";
       setError(errorMessage);
-    } finally {
       setIsLoading(false);
     }
   };
@@ -43,22 +64,32 @@ export default function SignInPage() {
     try {
       const user = await signInWithGoogle();
 
-      // Check if this is a first-time login or user hasn't completed profile setup
-      const userDoc = await getDocumentById<IUser>("users", user.uid);
+      // Give a moment for the auth context to update
+      setTimeout(async () => {
+        try {
+          // Check if this is a first-time login or user hasn't completed profile setup
+          const userDoc = await getDocumentById<IUser>("users", user.uid);
 
-      if (!userDoc?.role) {
-        // User hasn't set up their profile yet, redirect to profile setup
-        router.push("/profile-setup");
-      } else {
-        // User already has a role, go to feed
-        router.push("/feed");
-      }
+          if (!userDoc || !userDoc.role) {
+            // User hasn't set up their profile yet, redirect to profile setup
+            console.log("Google signin: Redirecting to profile-setup - no role found");
+            router.push("/profile-setup");
+          } else {
+            // User already has a role, go to feed
+            console.log("Google signin: Redirecting to feed - role found:", userDoc.role);
+            router.push("/feed");
+          }
+        } catch (fetchError) {
+          console.error("Error fetching user profile after Google signin:", fetchError);
+          // If we can't fetch the profile, assume they need to set it up
+          router.push("/profile-setup");
+        }
+      }, 500);
     } catch (err: Error | unknown) {
       console.error("Google sign in error:", err);
       const errorMessage =
         err instanceof Error ? err.message : "Failed to sign in with Google.";
       setError(errorMessage);
-    } finally {
       setIsLoading(false);
     }
   };

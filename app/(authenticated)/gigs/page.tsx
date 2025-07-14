@@ -2,15 +2,16 @@
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/context/auth-context-fix";
-import { getUpcomingGigs } from "@/lib/firebase/gigs";
-import { IGig } from "@/lib/types";
+import { getUpcomingGigs, getUserGigApplications } from "@/lib/firebase/gigs";
+import { IGig, IGigApplication } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { Calendar, Clock, MapPin, DollarSign, Plus } from "lucide-react";
+import { Calendar, Clock, MapPin, DollarSign, Plus, CheckCircle } from "lucide-react";
 import Link from "next/link";
 
 export default function GigsPage() {
   const { userProfile } = useAuth();
   const [gigs, setGigs] = useState<IGig[]>([]);
+  const [userApplications, setUserApplications] = useState<IGigApplication[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,13 +20,19 @@ export default function GigsPage() {
 
   useEffect(() => {
     loadGigs();
-  }, []);
+    if (userProfile?.id) {
+      loadUserApplications();
+    }
+  }, [userProfile]);
 
   const loadGigs = async () => {
     try {
       setIsLoading(true);
       setError(null);
+      console.log("🔍 Loading upcoming gigs...");
       const upcomingGigs = await getUpcomingGigs(20);
+      console.log("🔍 Loaded gigs:", upcomingGigs);
+      console.log("🔍 Number of gigs loaded:", upcomingGigs.length);
       setGigs(upcomingGigs);
     } catch (err) {
       console.error("Error loading gigs:", err);
@@ -33,6 +40,26 @@ export default function GigsPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const loadUserApplications = async () => {
+    if (!userProfile?.id) return;
+    
+    try {
+      const applications = await getUserGigApplications(userProfile.id);
+      console.log("🔍 Loaded user applications:", applications);
+      console.log("🔍 User profile ID:", userProfile.id);
+      setUserApplications(applications);
+    } catch (err) {
+      console.error("Error loading user applications:", err);
+    }
+  };
+
+  const getApplicationsForGig = (gigId: string) => {
+    const applications = userApplications.filter(app => app.gigId === gigId);
+    console.log(`🔍 Checking applications for gig ${gigId}:`, applications);
+    console.log(`🔍 Total user applications:`, userApplications.length);
+    return applications;
   };
 
   const formatDate = (date: Date) => {
@@ -195,9 +222,23 @@ export default function GigsPage() {
                           </Button>
                         </Link>
 
-                        {userProfile?.role === "musician" && (
-                          <Button size="sm">Apply</Button>
-                        )}
+                        {userProfile && (() => {
+                          const applications = getApplicationsForGig(gig.id);
+                          console.log(`🔍 Gig ${gig.id} applications:`, applications);
+                          if (applications.length > 0) {
+                            const applicationTypes = [...new Set(applications.map(app => app.applicantType))];
+                            console.log(`🔍 Application types for gig ${gig.id}:`, applicationTypes);
+                            return (
+                              <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 text-green-800 rounded-md text-sm">
+                                <CheckCircle className="h-4 w-4" />
+                                <span>
+                                  Applied as {applicationTypes.join(" & ")}
+                                </span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                     </div>
                   </div>
